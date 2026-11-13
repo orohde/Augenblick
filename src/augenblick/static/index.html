@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Augenblick!</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#0a6ed1">
+  <link rel="stylesheet" href="vendor/theme_horizon.css" id="theme-light">
+  <link rel="stylesheet" href="vendor/theme_horizon_dark.css" id="theme-dark" disabled>
+  <link rel="stylesheet" href="vendor/fundamental.css">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ============================== Login ============================== -->
+  <section id="view-login" class="login" hidden>
+    <form id="login-form" class="login__card">
+      <img src="icon.svg" alt="" class="login__logo">
+      <h1 class="fd-title fd-title--h3">Augenblick!</h1>
+      <label class="fd-form-label" for="login-user">Benutzer</label>
+      <input class="fd-input" id="login-user" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+      <label class="fd-form-label" for="login-pass">Passwort</label>
+      <input class="fd-input" id="login-pass" type="password" autocomplete="current-password" required>
+      <div id="login-code-box" hidden>
+        <label class="fd-form-label" for="login-code">Code aus der App</label>
+        <input class="fd-input" id="login-code" autocomplete="one-time-code" inputmode="numeric" maxlength="20">
+      </div>
+      <p id="login-error" class="login__error" hidden>Anmeldung fehlgeschlagen.</p>
+      <button class="fd-button fd-button--emphasized" type="submit">Anmelden</button>
+    </form>
+    <form id="setup-form" class="login__card" hidden>
+      <img src="icon.svg" alt="" class="login__logo">
+      <h1 class="fd-title fd-title--h3">Augenblick!</h1>
+      <p class="field-hint">Willkommen! Noch gibt es kein Konto. Lege jetzt den ersten Administrator an – weitere Konten folgen später unter Einstellungen.</p>
+      <label class="fd-form-label" for="setup-user">Benutzer</label>
+      <input class="fd-input" id="setup-user" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+      <label class="fd-form-label" for="setup-name">Anzeigename</label>
+      <input class="fd-input" id="setup-name" autocomplete="name">
+      <label class="fd-form-label" for="setup-pass">Passwort</label>
+      <input class="fd-input" id="setup-pass" type="password" autocomplete="new-password" minlength="12" required>
+      <label class="fd-form-label" for="setup-pass2">Passwort wiederholen</label>
+      <input class="fd-input" id="setup-pass2" type="password" autocomplete="new-password" minlength="12" required>
+      <p class="field-hint">Mindestens 12 Zeichen.</p>
+      <p id="setup-error" class="login__error" hidden></p>
+      <button class="fd-button fd-button--emphasized" type="submit">Konto anlegen</button>
+    </form>
+  </section>
+
+  <!-- ============================== App ============================== -->
+  <section id="view-app" class="app" hidden>
+    <header class="fd-shellbar">
+      <div class="fd-shellbar__group fd-shellbar__group--product">
+        <button id="btn-tree" class="fd-button fd-button--transparent fd-shellbar__button only-mobile" type="button" aria-label="Ordner">&#9776;</button>
+        <a id="home" class="shell-home" href="#/" title="Zur Zeitleiste">
+          <img src="icon.svg" alt="" class="shell-logo">
+          <span class="fd-shellbar__title">Augenblick!</span>
+        </a>
+      </div>
+      <div class="fd-shellbar__group shell-search">
+        <input id="search" class="fd-input" type="search" autocomplete="off" placeholder="Suchen: Name, Ordner, Beschreibung, Schlagwort, Ort">
+      </div>
+      <div class="fd-shellbar__group fd-shellbar__group--actions">
+        <a id="btn-inbox" class="fd-button fd-shellbar__button" href="#/eingang" title="Neu hochgeladene Bilder, noch nicht einsortiert" hidden>Eingang<span id="inbox-badge" class="inbox-badge" hidden></span></a>
+        <button id="btn-theme" class="fd-button fd-shellbar__button" type="button" aria-label="Hell oder dunkel">&#9680;</button>
+        <a id="btn-settings" class="fd-button fd-shellbar__button" href="#/einstellungen/konto" aria-label="Einstellungen" title="Einstellungen">&#9881;</a>
+        <button id="btn-logout" class="fd-button fd-shellbar__button" type="button">Abmelden</button>
+      </div>
+    </header>
+
+    <!-- ---------- library ---------- -->
+    <div id="view-library" class="library">
+      <div class="toolbar">
+        <div id="area-chips" class="chips" role="group" aria-label="Bereiche"></div>
+        <label class="toolbar__check"><input type="checkbox" id="chk-recursive" checked><span>mit Unterordnern</span></label>
+        <select id="sel-camera" class="fd-input toolbar__select" aria-label="Kamera"><option value="">Alle Kameras</option></select>
+        <select id="sel-place" class="fd-input toolbar__select" aria-label="Ort" hidden><option value="">Alle Orte</option></select>
+        <select id="sel-kind" class="fd-input toolbar__select" aria-label="Art">
+          <option value="">Fotos und Videos</option><option value="image">Nur Fotos</option><option value="video">Nur Videos</option>
+        </select>
+        <label class="toolbar__check" title="Bilder ohne Koordinaten"><input type="checkbox" id="chk-noplace"><span>ohne Ort</span></label>
+        <label class="toolbar__check" title="Bilder, deren Datum nicht aus der Kamera stammt, sondern aus Dateiname oder Dateidatum"><input type="checkbox" id="chk-nodate"><span>ohne Aufnahmedatum</span></label>
+        <label class="toolbar__check" id="misfit-box" title="Bilder, deren Ordner oder Name nicht zu ihrem Datum passt" hidden><input type="checkbox" id="chk-misfit"><span>passt nicht zum Schema</span></label>
+        <label class="toolbar__size" title="Größe der Bilder in der Übersicht">
+          <span aria-hidden="true">▫</span>
+          <input type="range" id="tile-size" min="80" max="360" step="10" aria-label="Größe der Bilder in der Übersicht">
+          <span aria-hidden="true">◻</span>
+        </label>
+        <button id="btn-select" class="fd-button fd-button--compact" type="button" hidden>Auswählen</button>
+        <span id="status" class="toolbar__status"></span>
+      </div>
+
+      <div class="layout">
+        <aside id="tree-panel" class="tree-panel">
+          <section id="people-box" class="side" data-section="personen" hidden>
+            <button class="side__head" type="button" aria-expanded="true" aria-controls="side-personen"><span class="tree-caret is-open" aria-hidden="true">›</span>Personen</button>
+            <div id="side-personen" class="side__body">
+              <a id="faces-link" class="tree-row side__link" href="#/gesichter" hidden><span class="tree-caret is-leaf" aria-hidden="true">›</span><span class="tree-name">Unbenannte Gesichter</span></a>
+              <div id="people" class="tree" role="tree"></div>
+            </div>
+          </section>
+          <section id="auto-box" class="side" data-section="auto" hidden>
+            <button class="side__head" type="button" aria-expanded="true" aria-controls="side-auto"><span class="tree-caret is-open" aria-hidden="true">›</span>Kategorien</button>
+            <div id="side-auto" class="side__body"><div id="auto" class="tree" role="tree"></div></div>
+          </section>
+          <section id="albums-box" class="side" data-section="alben" hidden>
+            <button class="side__head" type="button" aria-expanded="true" aria-controls="side-alben"><span class="tree-caret is-open" aria-hidden="true">›</span>Alben</button>
+            <div id="side-alben" class="side__body"><div id="albums" class="tree" role="tree"></div></div>
+          </section>
+          <section class="side" data-section="ordner">
+            <button class="side__head" type="button" aria-expanded="true" aria-controls="side-ordner" data-i18n="Ordner (mehrere)"><span class="tree-caret is-open" aria-hidden="true">›</span>Ordner</button>
+            <div id="side-ordner" class="side__body"><div id="tree" class="tree" role="tree"></div></div>
+          </section>
+          <a id="trash-link" class="trash-link" href="#/papierkorb">Papierkorb <span id="trash-count"></span></a>
+          <a class="tree-row side__link side__link--alone" href="#/duplikate"><span class="tree-caret is-leaf" aria-hidden="true">›</span><span class="tree-name">Duplikate</span></a>
+        </aside>
+        <div id="tree-grip" class="tree-grip" role="separator" aria-orientation="vertical" aria-label="Breite der Seitenleiste" tabindex="0" title="Ziehen ändert die Breite, Doppelklick stellt sie zurück"></div>
+        <main id="grid-panel" class="grid-panel" tabindex="-1">
+          <div class="grid-head">
+            <h2 id="grid-title" class="fd-title fd-title--h4">Zeitleiste</h2>
+            <span id="grid-count" class="grid-count"></span>
+            <button id="btn-rename-person" class="fd-button fd-button--compact" type="button" hidden title="Gibt dieser Person in allen Bildern einen anderen Namen – mit einem Namen, den es schon gibt, werden beide zu einer Person">Umbenennen oder zusammenführen</button>
+            <button id="btn-to-album" class="fd-button fd-button--compact" type="button" hidden title="Schreibt in jedes Bild dieses Ordners, in welchem Ordner es liegt – als Album">Ordner als Album merken</button>
+            <span id="mem-tools" class="mem-tools" hidden>
+              <button id="mem-pick" class="fd-button fd-button--compact" type="button" title="Zwischen einer Auswahl und allen Bildern dieser Tage wechseln"></button>
+              <button id="mem-ai" class="fd-button fd-button--compact" type="button" hidden title="Die KI sieht sich die Auswahl an und schlägt Titel, einen Satz und das Titelbild vor. Das kostet etwas und schickt bis zu acht verkleinerte Bilder an den KI-Anbieter.">KI: Titel vorschlagen</button>
+              <button id="mem-unai" class="fd-button fd-button--compact" type="button" hidden title="Den Titel der KI wieder vergessen">Titel der KI verwerfen</button>
+              <a id="mem-all" class="fd-button fd-button--compact" href="#/erinnerungen">Alle Erinnerungen</a>
+            </span>
+            <span class="view-switch" role="group" aria-label="Ansicht">
+              <button id="view-grid" class="fd-button fd-button--compact is-on" type="button" aria-pressed="true">Zeitleiste</button>
+              <button id="view-map" class="fd-button fd-button--compact" type="button" aria-pressed="false">Karte</button>
+            </span>
+          </div>
+          <p id="mem-text" class="mem-text" hidden></p>
+          <div id="memories" class="memories" hidden></div>
+          <div id="grid"></div>
+          <div id="places" class="places" hidden></div>
+          <p id="grid-empty" class="grid-empty" hidden>Hier ist nichts zu sehen.</p>
+        </main>
+        <nav id="years" class="years" aria-label="Jahre"></nav>
+      </div>
+
+      <div id="select-bar" class="select-bar" hidden>
+        <strong id="sel-count">Nichts ausgewählt</strong>
+        <button id="sel-edit" class="fd-button fd-button--emphasized" type="button">Ändern …</button>
+        <button id="sel-left" class="fd-button" type="button" title="Nach links drehen" aria-label="Nach links drehen">&#8634;</button>
+        <button id="sel-right" class="fd-button" type="button" title="Nach rechts drehen" aria-label="Nach rechts drehen">&#8635;</button>
+        <button id="sel-sort" class="fd-button" type="button" hidden title="Legt die Bilder dorthin, wo sie nach den Regeln hingehören">Einsortieren</button>
+        <select id="sel-move" class="fd-input toolbar__select" aria-label="In einen anderen Bereich verschieben" hidden></select>
+        <button id="sel-delete" class="fd-button" type="button">Löschen</button>
+        <button id="sel-all" class="fd-button fd-button--transparent" type="button" title="Alle Bilder der Ansicht auswählen, über alle Monate">Alles auswählen</button>
+        <button id="sel-none" class="fd-button fd-button--transparent" type="button">Auswahl aufheben</button>
+        <button id="sel-done" class="fd-button fd-button--transparent" type="button">Fertig</button>
+        <span id="sel-msg" class="form-msg" role="status"></span>
+      </div>
+    </div>
+
+    <!-- ---------- settings ---------- -->
+    <div id="view-settings" class="settings" hidden>
+      <nav class="settings-nav" aria-label="Einstellungen">
+        <a href="#/" class="settings-back">← Zurück zu den Bildern</a>
+        <h2 class="fd-title fd-title--h4">Einstellungen</h2>
+        <a class="set-link" href="#/einstellungen/konto" data-pane="konto">Mein Konto</a>
+        <a class="set-link admin-only" href="#/einstellungen/benutzer" data-pane="benutzer" data-i18n="Benutzer (mehrere)">Benutzer</a>
+        <a class="set-link admin-only" href="#/einstellungen/ordnen" data-pane="ordnen">Ordnen</a>
+        <a class="set-link admin-only" href="#/einstellungen/personen" data-pane="personen">Personen</a>
+        <a class="set-link admin-only" href="#/einstellungen/ki" data-pane="ki">KI</a>
+        <a class="set-link admin-only" href="#/einstellungen/sicherheit" data-pane="sicherheit">Sicherheit</a>
+        <a class="set-link admin-only" href="#/einstellungen/api" data-pane="api">API</a>
+        <a class="set-link" href="#/einstellungen/papierkorb" data-pane="papierkorb">Papierkorb</a>
+        <a class="set-link" href="#/einstellungen/aenderungen" data-pane="aenderungen">Änderungen</a>
+        <a class="set-link" href="#/einstellungen/auftraege" data-pane="auftraege">Aufträge</a>
+        <a class="set-link" href="#/einstellungen/system" data-pane="system">System</a>
+      </nav>
+      <div class="settings-body">
+
+        <section class="set-pane" data-pane="konto">
+          <h3 class="fd-title fd-title--h4">Mein Konto</h3>
+          <p id="me-line" class="set-hint"></p>
+          <div class="form-grid card acc-lang">
+            <label class="fd-form-label" for="acc-lang">Sprache</label>
+            <div>
+              <select id="acc-lang" class="fd-input" translate="no">
+                <option value="de">Deutsch</option>
+                <option value="en">English</option>
+                <option value="fr">Français</option>
+                <option value="it">Italiano</option>
+              </select>
+              <div class="field-hint">Gilt für dieses Konto auf allen Geräten.</div>
+            </div>
+          </div>
+          <form id="pw-form" class="form-grid card">
+            <label class="fd-form-label" for="pw-old">Aktuelles Passwort</label>
+            <input class="fd-input" id="pw-old" type="password" autocomplete="current-password" required>
+            <label class="fd-form-label" for="pw-new">Neues Passwort</label>
+            <input class="fd-input" id="pw-new" type="password" autocomplete="new-password" minlength="12" required>
+            <label class="fd-form-label" for="pw-new2">Neues Passwort wiederholen</label>
+            <input class="fd-input" id="pw-new2" type="password" autocomplete="new-password" minlength="12" required>
+            <span></span>
+            <div><button class="fd-button fd-button--emphasized" type="submit">Passwort ändern</button>
+              <span id="pw-msg" class="form-msg"></span></div>
+          </form>
+          <div id="mfa-card" class="card mfa-card">
+            <h4 class="fd-title fd-title--h5 card-title">Zweiter Faktor</h4>
+            <p id="mfa-state" class="set-hint"></p>
+            <form id="mfa-start" class="form-grid" hidden>
+              <label class="fd-form-label" for="mfa-pass">Aktuelles Passwort</label>
+              <input class="fd-input" id="mfa-pass" type="password" autocomplete="current-password" required>
+              <span></span>
+              <div><button class="fd-button fd-button--emphasized" type="submit">Einrichten</button>
+                <span id="mfa-msg-start" class="form-msg"></span></div>
+            </form>
+            <div id="mfa-setup" hidden>
+              <p class="set-hint">Scanne den Code mit einer Authenticator-App (zum Beispiel Bitwarden, 2FAS, Aegis oder Google Authenticator) und gib dann die sechs Ziffern ein, die sie anzeigt.</p>
+              <div class="mfa-qr"><img id="mfa-qr" alt="QR-Code"></div>
+              <p class="field-hint">Oder von Hand eingeben: <code id="mfa-secret" class="mfa-secret"></code></p>
+              <form id="mfa-confirm" class="form-grid">
+                <label class="fd-form-label" for="mfa-code">Code aus der App</label>
+                <input class="fd-input" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
+                <span></span>
+                <div><button class="fd-button fd-button--emphasized" type="submit">Einschalten</button>
+                  <button id="mfa-abort" class="fd-button fd-button--transparent" type="button">Abbrechen</button>
+                  <span id="mfa-msg-confirm" class="form-msg"></span></div>
+              </form>
+            </div>
+            <div id="mfa-codes" hidden>
+              <p class="set-hint">Deine Wiederherstellungscodes. Mit jedem kommst du einmal hinein, falls das Telefon weg ist. Lege sie jetzt sicher ab, zum Beispiel im Passwortmanager. Augenblick! zeigt sie nicht noch einmal.</p>
+              <pre id="mfa-code-list" class="mfa-code-list"></pre>
+              <div class="form-actions">
+                <span id="mfa-msg-codes" class="form-msg"></span>
+                <button id="mfa-copy" class="fd-button" type="button">Kopieren</button>
+                <button id="mfa-done" class="fd-button fd-button--emphasized" type="button">Ich habe sie gesichert</button>
+              </div>
+            </div>
+            <div id="mfa-on" hidden>
+              <form id="mfa-renew" class="form-grid">
+                <label class="fd-form-label" for="mfa-renew-code">Code aus der App</label>
+                <input class="fd-input" id="mfa-renew-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
+                <span></span>
+                <div><button class="fd-button" type="submit">Neue Wiederherstellungscodes</button>
+                  <span id="mfa-msg-renew" class="form-msg"></span></div>
+              </form>
+              <details class="mfa-disable">
+                <summary>Zweiten Faktor ausschalten</summary>
+                <form id="mfa-off-form" class="form-grid">
+                  <label class="fd-form-label" for="mfa-off-pass">Aktuelles Passwort</label>
+                  <input class="fd-input" id="mfa-off-pass" type="password" autocomplete="current-password" required>
+                  <label class="fd-form-label" for="mfa-off-code">Code oder Wiederherstellungscode</label>
+                  <input class="fd-input" id="mfa-off-code" autocomplete="one-time-code" maxlength="20" required>
+                  <span></span>
+                  <div><button class="fd-button fd-button--negative" type="submit">Ausschalten</button>
+                    <span id="mfa-msg-off" class="form-msg"></span></div>
+                </form>
+              </details>
+            </div>
+          </div>
+          <div class="card">
+            <div class="pane-head">
+              <h4 class="fd-title fd-title--h5 card-title">Angemeldete Geräte</h4>
+              <button id="ses-others" class="fd-button" type="button">Alle anderen abmelden</button>
+            </div>
+            <p id="ses-msg" class="form-msg ses-msg" role="status"></p>
+            <table class="fd-table ses-table"><tbody id="ses-rows" class="fd-table__body"></tbody></table>
+          </div>
+        </section>
+
+        <section class="set-pane" data-pane="benutzer" hidden>
+          <div class="pane-head">
+            <h3 class="fd-title fd-title--h4" data-i18n="Benutzer (mehrere)">Benutzer</h3>
+            <button id="usr-new" class="fd-button fd-button--emphasized" type="button">Neuer Benutzer</button>
+          </div>
+          <p class="set-hint">Ein Bereich ist ein Ordner direkt unter dem Foto-Verzeichnis. Administratoren sehen alle Bereiche.</p>
+          <table class="fd-table card">
+            <thead class="fd-table__header"><tr class="fd-table__row">
+              <th class="fd-table__cell">Bereich</th>
+              <th class="fd-table__cell">Bilder</th>
+              <th class="fd-table__cell">Benutzer</th>
+              <th class="fd-table__cell" title="Aus: keine Ortsnamen, und die Bilder stehen nicht unter „ohne Ort“">braucht Ort</th>
+              <th class="fd-table__cell" title="Aus: die Bilder stehen nicht unter „ohne Aufnahmedatum“">braucht Datum</th>
+              <th class="fd-table__cell"></th>
+            </tr></thead>
+            <tbody id="area-rows" class="fd-table__body"></tbody>
+          </table>
+          <form id="area-form" class="card area-form">
+            <label class="fd-form-label" for="area-name">Neuer Bereich</label>
+            <input class="fd-input" id="area-name" autocomplete="off" maxlength="40" placeholder="z. B. Bildschirmfotos" required>
+            <label class="check"><input type="checkbox" id="area-places" checked> <span>braucht Ort</span></label>
+            <label class="check"><input type="checkbox" id="area-dates" checked> <span>braucht Datum</span></label>
+            <button class="fd-button" type="submit">Bereich anlegen</button>
+            <span id="area-msg" class="form-msg" role="status"></span>
+          </form>
+          <p class="field-hint">Ein neuer Bereich gehört zunächst niemandem; wer ihn sehen oder dort schreiben darf, stellst du unten beim Benutzer ein. Löschen geht nur, solange er leer ist.</p>
+          <table class="fd-table card">
+            <thead class="fd-table__header"><tr class="fd-table__row">
+              <th class="fd-table__cell">Benutzer</th>
+              <th class="fd-table__cell">Rolle</th>
+              <th class="fd-table__cell">Bereiche</th>
+              <th class="fd-table__cell">Zweiter Faktor</th>
+              <th class="fd-table__cell"></th>
+            </tr></thead>
+            <tbody id="usr-rows" class="fd-table__body"></tbody>
+          </table>
+          <p id="usr-list-msg" class="form-msg" role="status"></p>
+          <form id="usr-form" class="card usr-form" hidden>
+            <h4 id="usr-form-title" class="fd-title fd-title--h5"></h4>
+            <div class="form-grid">
+              <label class="fd-form-label" for="usr-name">Benutzer</label>
+              <input class="fd-input" id="usr-name" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="[a-z0-9][a-z0-9._-]{0,31}" required>
+              <label class="fd-form-label" for="usr-display">Anzeigename</label>
+              <input class="fd-input" id="usr-display" autocomplete="off">
+              <label class="fd-form-label" for="usr-pass">Passwort</label>
+              <input class="fd-input" id="usr-pass" type="password" autocomplete="new-password" minlength="12">
+              <span></span>
+              <label class="check"><input type="checkbox" id="usr-admin"> <span>Administrator (sieht alle Bereiche, darf Einstellungen ändern)</span></label>
+              <span class="fd-form-label">Bereiche</span>
+              <div id="usr-areas" class="area-perms"></div>
+              <span class="usr-existing"></span>
+              <label class="check usr-existing"><input type="checkbox" id="usr-signout"> <span>Auf allen Geräten abmelden</span></label>
+              <span class="usr-mfa-reset"></span>
+              <label class="check usr-mfa-reset"><input type="checkbox" id="usr-reset-totp"> <span>Zweiten Faktor zurücksetzen (wenn das Telefon verloren ist)</span></label>
+            </div>
+            <div class="form-actions">
+              <span id="usr-msg" class="form-msg"></span>
+              <button id="usr-cancel" class="fd-button" type="button">Abbrechen</button>
+              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="set-pane" data-pane="ordnen" hidden>
+          <h3 class="fd-title fd-title--h4">Ordnen</h3>
+          <p class="set-hint">Regeln sagen, in welchen Ordner ein Bild gehört und wie die Datei heißt. Ohne Regel fasst Augenblick! nichts an. Einsortiert werden nur Bilder mit Aufnahmedatum; nie wird etwas überschrieben, und jedes Verschieben steht bei den Änderungen und lässt sich zurücknehmen.</p>
+          <form id="sort-form" autocomplete="off">
+            <div class="card">
+              <div class="pane-head">
+                <h4 class="fd-title fd-title--h5 card-title">Regeln</h4>
+                <span class="inline">
+                  <select id="sort-preset" class="fd-input" aria-label="Vorlage">
+                    <option value="">Vorlage …</option>
+                    <option value="{Jahr}|{JJJJMMTT}_{HHMMSS}">Jahr, Datei nach Datum benannt</option>
+                    <option value="{Jahr}/{Monat}|{JJJJMMTT}_{HHMMSS}">Jahr/Monat, Datei nach Datum benannt</option>
+                    <option value="{Jahr}|">Jahr, Name bleibt</option>
+                    <option value="|{JJJJMMTT}_{HHMMSS}">Ordner bleibt, Datei nach Datum benannt</option>
+                    <option value="|">Nichts anfassen (Ausnahme)</option>
+                  </select>
+                  <button id="sort-add" class="fd-button" type="button">Neue Regel</button>
+                </span>
+              </div>
+              <p class="field-hint">Die genauere Regel gewinnt: Eine Regel für „Familie/Boote“ geht der für „Familie“ vor. Leeres Feld heißt: bleibt, wie es ist. Bausteine: <code id="sort-blocks"></code></p>
+              <div id="sort-rules" class="sort-rules"></div>
+            </div>
+            <div class="card">
+              <h4 class="fd-title fd-title--h5 card-title">Nach einer Datumsänderung</h4>
+              <p class="field-hint">Was passieren soll, wenn ein Bild nach dem Ändern des Datums nicht mehr an seinen Platz passt.</p>
+              <div id="sort-modes" class="area-perms"></div>
+            </div>
+            <div class="form-actions">
+              <span id="sort-msg" class="form-msg"></span>
+              <button id="sort-preview" class="fd-button" type="button">Vorschau</button>
+              <button id="sort-all" class="fd-button" type="button">Alles einsortieren</button>
+              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
+            </div>
+          </form>
+          <div id="sort-moves" class="card sort-moves" hidden></div>
+        </section>
+
+        <section class="set-pane" data-pane="personen" hidden>
+          <h3 class="fd-title fd-title--h4">Personen</h3>
+          <p class="set-hint">Augenblick! kann in den Bildern Gesichter finden und ähnliche zusammenstellen. Das geschieht auf diesem Rechner; kein Bild geht nach außen. Die Suche läuft langsam im Hintergrund, liest nur und macht nach einem Neustart dort weiter, wo sie war. Ins Bild geschrieben wird ein Name erst, wenn du ihn bestätigst – als Markierung, die auch andere Programme lesen (XMP-Region).</p>
+          <form id="faces-form" class="card">
+            <p><strong>Gesichter suchen in diesen Bereichen</strong></p>
+            <div id="faces-areas" class="faces-areas"></div>
+            <p class="field-hint">Wird ein Bereich abgeschaltet, vergisst Augenblick!, was es dort gefunden hat. Namen, die schon in den Bildern stehen, bleiben.</p>
+            <p id="faces-state" class="field-hint"></p>
+            <p id="faces-ignored" class="field-hint" hidden><span></span> <button id="faces-restore" class="fd-button fd-button--compact" type="button">Alle zurückholen</button></p>
+            <p class="field-hint">Was dabei entsteht (wo Gesichter sind und wie sie aussehen), liegt in einer eigenen Datei neben dem Index und lässt sich jederzeit neu berechnen. Die beiden Modelle stammen aus dem OpenCV Zoo: YuNet findet Gesichter (MIT-Lizenz), SFace vergleicht sie (Apache 2.0).</p>
+            <div class="form-actions">
+              <span id="faces-set-msg" class="form-msg" role="status"></span>
+              <a class="fd-button" href="#/gesichter">Unbenannte Gesichter ansehen</a>
+              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
+            </div>
+          </form>
+          <form id="immich-form" class="card" autocomplete="off" data-bwignore="true">
+            <h4 class="fd-title fd-title--h5 card-title">Personen aus Immich übernehmen</h4>
+            <p class="set-hint">Einmalig: Augenblick! fragt Immich, wen es mit Namen kennt und auf welchen Bildern, sucht dieselben Bilder hier und schreibt die Namen als Markierung in die Dateien. In Immich wird nichts geändert. Erst kommt eine Vorschau; geschrieben wird nach deiner Bestätigung, und jedes Bild lässt sich unter Änderungen zurücknehmen. Adresse und Schlüssel werden nicht gespeichert. Der Schlüssel braucht in Immich die Rechte, Personen, Gesichter und Bilder zu lesen.</p>
+            <div class="form-grid">
+              <label class="fd-form-label" for="immich-url">Adresse von Immich</label>
+              <input class="fd-input" id="immich-url" placeholder="http://192.168.1.10:2283" spellcheck="false" autocapitalize="off" required>
+              <label class="fd-form-label" for="immich-key">API-Schlüssel</label>
+              <input class="fd-input" id="immich-key" type="password" autocomplete="off" required>
+            </div>
+            <div class="form-actions">
+              <span id="immich-msg" class="form-msg" role="status"></span>
+              <button class="fd-button fd-button--emphasized" type="submit">Vorschau</button>
+            </div>
+            <div id="immich-plan" hidden>
+              <table class="immich-table">
+                <thead><tr><th></th><th>Person</th><th>in Immich</th><th>hier gefunden</th><th>schon benannt</th><th>zu schreiben</th></tr></thead>
+                <tbody id="immich-people"></tbody>
+              </table>
+              <p id="immich-missed" class="field-hint"></p>
+              <div class="form-actions">
+                <button id="immich-go" class="fd-button fd-button--emphasized" type="button">Namen in die Bilder schreiben</button>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <section class="set-pane" data-pane="ki" hidden>
+          <h3 class="fd-title fd-title--h4">KI</h3>
+          <p class="set-hint">Eine KI kann sich ein Bild ansehen und Beschreibung, Schlagworte und – bei Bildern ohne Aufnahmedatum – ein Datum vorschlagen. Geschrieben wird nichts von selbst: Der Vorschlag landet im Bearbeiten-Formular, du entscheidest. Das Bild geht dafür verkleinert an den gewählten Anbieter.</p>
+          <form id="ai-form" autocomplete="off" data-bwignore="true">
+            <div class="card">
+              <h4 class="fd-title fd-title--h5 card-title">Anbieter</h4>
+              <div class="form-grid">
+                <span></span>
+                <label class="check"><input type="checkbox" id="ai-enabled"> <span>KI einschalten</span></label>
+                <span></span>
+                <label class="check"><input type="checkbox" id="ai-memories"> <span>KI darf Erinnerungen benennen <span class="hint">– nur auf Knopfdruck je Erinnerung: Sie bekommt bis zu acht verkleinerte Bilder und schlägt Titel, einen Satz und das Titelbild vor.</span></span></label>
+                <label class="fd-form-label" for="ai-provider">Anbieter</label>
+                <select class="fd-input" id="ai-provider">
+                  <option value="anthropic">Claude (Anthropic)</option>
+                  <option value="ollama">Ollama (eigener Rechner)</option>
+                  <option value="openai">Anderer, OpenAI-kompatibel</option>
+                </select>
+                <label class="fd-form-label ai-url" for="ai-url">Adresse des Servers</label>
+                <input class="fd-input ai-url" id="ai-url" placeholder="http://192.168.1.10:11434" spellcheck="false" autocapitalize="off">
+                <label class="fd-form-label" for="ai-key">API-Schlüssel</label>
+                <div class="inline">
+                  <input class="fd-input masked" id="ai-key" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
+                  <button id="ai-clear-key" class="fd-button fd-button--transparent" type="button">Entfernen</button>
+                </div>
+                <label class="fd-form-label" for="ai-model">Modell</label>
+                <div class="inline">
+                  <select class="fd-input" id="ai-model"></select>
+                  <button id="ai-load-models" class="fd-button" type="button">Modelle laden</button>
+                </div>
+                <label class="fd-form-label" for="ai-limit">Monatslimit (US-Dollar)</label>
+                <input class="fd-input" id="ai-limit" type="number" min="0" step="0.5">
+                <span></span>
+                <span id="ai-usage" class="field-hint"></span>
+              </div>
+            </div>
+            <div class="card">
+              <h4 class="fd-title fd-title--h5 card-title">Bereiche</h4>
+              <p class="field-hint">Bilder aus angekreuzten Bereichen gehen nie an die KI.</p>
+              <div id="ai-areas" class="sec-checks"></div>
+            </div>
+            <div class="card">
+              <div class="pane-head">
+                <h4 class="fd-title fd-title--h5 card-title">Anweisungen</h4>
+                <button id="ai-add-prompt" class="fd-button" type="button">Neue Anweisung</button>
+              </div>
+              <p class="field-hint">Was die KI mit dem Bild tun soll. Das Antwortformat hängt Augenblick! selbst an. Die angekreuzte Anweisung ist vorausgewählt.</p>
+              <div id="ai-prompts" class="ai-prompts"></div>
+            </div>
+            <div class="form-actions">
+              <span id="ai-msg" class="form-msg"></span>
+              <button id="ai-test" class="fd-button" type="button">Testen</button>
+              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="set-pane" data-pane="sicherheit" hidden>
+          <h3 class="fd-title fd-title--h4">Sicherheit</h3>
+          <p id="sec-where" class="set-hint"></p>
+          <form id="sec-form" autocomplete="off" data-bwignore="true">
+            <div class="card">
+              <h4 class="fd-title fd-title--h5 card-title">Anmeldung</h4>
+              <label class="check"><input type="checkbox" id="sec-ext"> <span>Von außen nur mit zweitem Faktor</span></label>
+              <p class="field-hint sec-hint">Konten ohne zweiten Faktor können sich dann nur noch im Heimnetz anmelden. Einschalten lässt sich das erst, wenn dein eigenes Konto einen hat.</p>
+              <p id="sec-without" class="field-hint sec-hint is-warn" hidden></p>
+              <label class="check"><input type="checkbox" id="sec-int"> <span>Zweiten Faktor auch im Heimnetz verlangen</span></label>
+              <p class="field-hint sec-hint">Sonst reicht zu Hause das Passwort. Von außen fragt Augenblick! immer nach dem Code, wenn ein Konto einen zweiten Faktor hat.</p>
+            </div>
+            <div class="card">
+              <h4 class="fd-title fd-title--h5 card-title">Heimnetz</h4>
+              <p class="field-hint sec-hint">Adressbereiche, die als „zu Hause“ gelten (LAN, VPN). Alles andere ist „von außen“. Leer lassen für die Vorgabe.</p>
+              <textarea class="fd-input sec-nets" id="sec-nets" rows="3" spellcheck="false" autocapitalize="off"></textarea>
+              <p id="sec-nets-here" class="field-hint sec-hint"></p>
+            </div>
+            <div class="card">
+              <h4 class="fd-title fd-title--h5 card-title">Benachrichtigungen per ntfy</h4>
+              <div class="form-grid">
+                <label class="fd-form-label" for="sec-url">Topic-Adresse</label>
+                <input class="fd-input" id="sec-url" placeholder="https://ntfy.example.org/augenblick" autocomplete="off" spellcheck="false">
+                <label class="fd-form-label" for="sec-token">Zugangs-Token</label>
+                <div class="inline">
+                  <input class="fd-input masked" id="sec-token" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
+                  <button id="sec-clear-token" class="fd-button fd-button--transparent" type="button">Entfernen</button>
+                </div>
+                <span class="fd-form-label">Melden bei</span>
+                <div class="sec-checks">
+                  <label class="check"><input type="checkbox" id="sec-n-ext"> <span>jeder Anmeldung von außen</span></label>
+                  <label class="check"><input type="checkbox" id="sec-n-lock"> <span>gesperrtem Konto nach Fehlversuchen</span></label>
+                  <label class="check"><input type="checkbox" id="sec-n-2fa"> <span>Änderungen am zweiten Faktor und benutzten Wiederherstellungscodes</span></label>
+                </div>
+              </div>
+            </div>
+            <div class="form-actions">
+              <span id="sec-msg" class="form-msg"></span>
+              <button id="sec-test" class="fd-button" type="button">Testnachricht</button>
+              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="set-pane" data-pane="api" hidden>
+          <h3 class="fd-title fd-title--h4">API</h3>
+          <p class="set-hint">Alles, was die Oberfläche kann, geht auch per REST-API unter /api/, für Skripte, Kurzbefehle oder Home Assistant.</p>
+          <div class="card">
+            <h4 class="fd-title fd-title--h5 card-title">API-Schlüssel</h4>
+            <div class="inline api-key-row">
+              <input class="fd-input api-key" id="api-key" type="text" readonly autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
+              <button id="api-eye" class="fd-button" type="button" aria-pressed="false" aria-label="Schlüssel anzeigen" title="Schlüssel anzeigen oder verbergen">&#128065;</button>
+              <button id="api-copy" class="fd-button" type="button">Kopieren</button>
+              <button id="api-new" class="fd-button" type="button">Neu erzeugen</button>
+              <button id="api-del" class="fd-button fd-button--transparent" type="button">Löschen</button>
+            </div>
+            <p id="api-state" class="field-hint"></p>
+            <p class="field-hint">Programme schicken den Schlüssel bei jeder Anfrage mit. Er öffnet alles wie ein Administrator, also gehört er nur in vertrauenswürdige Skripte. Neu erzeugen macht den alten sofort ungültig.</p>
+            <pre class="api-example"><code id="api-example"></code></pre>
+          </div>
+          <div class="card">
+            <h4 class="fd-title fd-title--h5 card-title">Upload vom Telefon (WebDAV)</h4>
+            <p class="field-hint">Apps wie PhotoSync laden neue Fotos über WebDAV hoch. Diese Tür führt nur in einen Bereich: Die App kann dort nachsehen, Ordner anlegen und Dateien ablegen – Bilder lesen, ändern oder löschen kann sie nicht, und den übrigen Bestand sieht sie nie. Der Upload-Schlüssel öffnet nur diese Tür, nicht die API.</p>
+            <div class="form-grid">
+              <label class="fd-form-label" for="up-area">Bereich für Uploads</label>
+              <select class="fd-input" id="up-area"></select>
+              <span class="fd-form-label">Adresse</span>
+              <code id="up-url"></code>
+              <span class="fd-form-label">Anmeldung in der App</span>
+              <span>Benutzer beliebig (z. B. <code>upload</code>), Passwort = Upload-Schlüssel</span>
+            </div>
+            <h5 class="fd-title fd-title--h6 up-head">Upload-Schlüssel</h5>
+            <p class="field-hint">Je Telefon oder Person ein eigener Schlüssel: So lässt sich einer sperren, ohne die anderen zu stören. Ein Schlüssel kann in einen eigenen Bereich führen statt in den oben gewählten.</p>
+            <table class="fd-table up-table"><tbody id="up-keys" class="fd-table__body"></tbody></table>
+            <div id="up-fresh" class="up-fresh" hidden>
+              <span id="up-fresh-for"></span>
+              <div class="inline api-key-row">
+                <input class="fd-input api-key" id="up-key" type="text" readonly autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
+                <button id="up-copy" class="fd-button" type="button">Kopieren</button>
+              </div>
+              <span class="hint">Jetzt kopieren und in der App als Passwort eintragen – er wird nicht wieder angezeigt.</span>
+            </div>
+            <form id="up-add" class="inline up-add">
+              <input class="fd-input" id="up-name" maxlength="40" placeholder="Name, z. B. Gretas iPhone" aria-label="Name des neuen Schlüssels" required>
+              <button class="fd-button" type="submit">Schlüssel hinzufügen</button>
+            </form>
+            <p id="up-state" class="field-hint"></p>
+          </div>
+          <div class="card">
+            <h4 class="fd-title fd-title--h5 card-title">Beschreibung aller Endpunkte</h4>
+            <p class="field-hint">Augenblick! beschreibt seine API selbst: jeder Endpunkt mit Parametern und Antwort, direkt im Browser ausprobierbar (mit deiner Anmeldung).</p>
+            <p><a class="fd-link" href="/api/docs" target="_blank" rel="noopener">API-Beschreibung öffnen</a> · <a class="fd-link" href="/api/openapi.json" target="_blank" rel="noopener">openapi.json</a></p>
+          </div>
+        </section>
+
+        <section class="set-pane" data-pane="papierkorb">
+          <h3 class="fd-title fd-title--h4">Papierkorb</h3>
+          <p class="field-hint">Gelöschte Bilder wandern in den Papierkorb ihres Bereichs und lassen sich von dort zurückholen. Nach Ablauf der Frist verschwinden sie endgültig.</p>
+          <form id="trash-form" class="form-grid">
+            <label class="fd-form-label" for="trash-days">Aufbewahren (Tage)</label>
+            <input class="fd-input" id="trash-days" type="number" min="0" max="3650" step="1" required>
+            <span></span>
+            <span class="field-hint">0 heißt: nichts verschwindet von selbst, erst beim Leeren.</span>
+            <span></span>
+            <div><button class="fd-button fd-button--emphasized admin-only" type="submit">Speichern</button>
+              <span id="trash-set-msg" class="form-msg" role="status"></span></div>
+          </form>
+          <p><a class="fd-button" href="#/papierkorb">Papierkorb öffnen</a></p>
+        </section>
+
+        <section class="set-pane" data-pane="aenderungen">
+          <h3 class="fd-title fd-title--h4">Änderungen</h3>
+          <p class="field-hint">Was in die Bilder geschrieben wurde, das Neueste zuerst. Zurücknehmen geht, solange das Bild seither nicht noch einmal geändert wurde.</p>
+          <div id="journal"></div>
+          <span id="journal-msg" class="form-msg" role="status"></span>
+        </section>
+
+        <section class="set-pane" data-pane="auftraege" hidden>
+          <h3 class="fd-title fd-title--h4">Aufträge</h3>
+          <p class="set-hint">Was Augenblick! im Hintergrund tut und wie weit es ist. Die Anzeige erneuert sich von selbst.</p>
+          <div class="card">
+            <div class="pane-head">
+              <h4 class="fd-title fd-title--h5 card-title">Ordner einlesen</h4>
+              <button id="job-scan" class="fd-button admin-only" type="button">Jetzt einlesen</button>
+            </div>
+            <p id="job-scan-text" class="job-text"></p>
+            <progress id="job-scan-bar" class="job-bar" max="1" value="0" hidden></progress>
+          </div>
+          <div class="card">
+            <div class="pane-head">
+              <h4 class="fd-title fd-title--h5 card-title">Gesichter suchen</h4>
+              <button id="job-faces" class="fd-button admin-only" type="button">Jetzt suchen</button>
+            </div>
+            <p id="job-faces-text" class="job-text"></p>
+            <progress id="job-faces-bar" class="job-bar" max="1" value="0" hidden></progress>
+            <p class="field-hint">Die Suche sieht sich jedes Bild einmal an. Ein Bild, das sich seither nur in seinen Angaben geändert hat (Name, Datum, Album), wird nicht noch einmal durchsucht – der Bildinhalt ist derselbe.</p>
+          </div>
+          <div class="card">
+            <div class="pane-head">
+              <h4 class="fd-title fd-title--h5 card-title">Duplikate suchen</h4>
+              <span class="inline"><a class="fd-button fd-button--transparent" href="#/duplikate">Duplikate ansehen</a>
+                <button id="job-dupes" class="fd-button admin-only" type="button">Jetzt suchen</button></span>
+            </div>
+            <p id="job-dupes-text" class="job-text"></p>
+            <progress id="job-dupes-bar" class="job-bar" max="1" value="0" hidden></progress>
+            <p class="field-hint">Findet Bilder, die mehrfach da sind – auch in anderer Größe oder Qualität gespeichert. Die Suche liest nur; gelöscht wird erst, wenn du es auf der Seite „Duplikate“ sagst, und dann in den Papierkorb. Neue Bilder kommen nicht von selbst dazu: dafür noch einmal „Jetzt suchen“.</p>
+          </div>
+          <div class="card">
+            <div class="pane-head">
+              <h4 class="fd-title fd-title--h5 card-title">Großer Auftrag</h4>
+              <button id="job-stop" class="fd-button admin-only" type="button" hidden>Abbrechen</button>
+            </div>
+            <p id="job-long-text" class="job-text"></p>
+            <progress id="job-long-bar" class="job-bar" max="1" value="0" hidden></progress>
+            <ul id="job-long-errors" class="job-errors"></ul>
+            <p class="field-hint">Dazu gehören „Ordner als Album merken“, „Personen aus Immich übernehmen“ und „Person umbenennen“. Es läuft immer nur einer. Ein Neustart von Augenblick! bricht ihn ab; was bis dahin geschrieben wurde, bleibt.</p>
+          </div>
+          <p id="job-msg" class="form-msg" role="status"></p>
+        </section>
+
+        <section class="set-pane" data-pane="system">
+          <h3 class="fd-title fd-title--h4">System</h3>
+          <p id="sys-line" class="field-hint"></p>
+          <button id="btn-rescan" class="fd-button admin-only" type="button">Ordner jetzt neu einlesen</button>
+          <p id="sys-support" class="field-hint" hidden>Augenblick! ist freie Software und kostet nichts. Wenn es dir hilft:
+            <a id="sys-support-link" class="fd-link" target="_blank" rel="noopener">die Arbeit daran unterstützen</a>.</p>
+        </section>
+      </div>
+    </div>
+
+    <!-- ---------- faces without a name ---------- -->
+    <div id="view-faces" class="page" hidden>
+      <div class="settings__inner settings__inner--full">
+        <h2 class="fd-title fd-title--h3">Unbenannte Gesichter</h2>
+        <p id="faces-line" class="field-hint"></p>
+        <p class="field-hint">Ähnliche Gesichter stehen zusammen. Trag den Namen ein und bestätige – erst dann wird er in die Bilder geschrieben, und jedes Schreiben lässt sich unter Einstellungen → Änderungen zurücknehmen. Links wählst du die Gruppe. Ein Klick auf ein Gesicht nimmt es aus der Auswahl heraus; rechts erscheint dabei das ganze Bild mit dem markierten Gesicht. „Ignorieren“ ist für Fremde, Statuen und Plakate: Die ausgewählten Gesichter tauchen hier nicht mehr auf; am Bild ändert das nichts.</p>
+        <div class="trash-bar faces-bar">
+          <a class="fd-button" href="#/">Zurück zu den Bildern</a>
+          <label class="face-size"><span>Größe</span>
+            <input id="face-size" type="range" min="56" max="160" step="8" aria-label="Größe der Gesichter"></label>
+          <button id="faces-ai" class="fd-button admin-only" type="button" hidden>KI: Fehltreffer suchen</button>
+          <span id="faces-msg" class="form-msg" role="status"></span>
+        </div>
+        <datalist id="people-names"></datalist>
+        <div class="faces-layout">
+          <div id="face-list-col" class="face-list">
+            <div id="face-list" role="listbox" aria-label="Gruppen"></div>
+            <button id="faces-more" class="fd-button fd-button--transparent" type="button" hidden>Weitere Gruppen zeigen</button>
+          </div>
+          <div id="face-list-grip" class="tree-grip face-grip" role="separator" aria-orientation="vertical" aria-label="Breite der Gruppenliste" tabindex="0" title="Ziehen ändert die Breite, Doppelklick stellt sie zurück"></div>
+          <div id="face-groups" class="face-groups"></div>
+          <div id="face-ref-grip" class="tree-grip face-grip" role="separator" aria-orientation="vertical" aria-label="Breite des Bildes" tabindex="0" title="Ziehen ändert die Breite, Doppelklick stellt sie zurück"></div>
+          <aside id="face-ref" class="face-ref" hidden>
+            <button id="face-ref-open" class="face-ref__pic" type="button" title="Bild öffnen">
+              <img id="face-ref-img" alt=""><span id="face-ref-box" class="face-ref__box"></span>
+            </button>
+            <p id="face-ref-name" class="field-hint"></p>
+            <div id="face-ref-like" hidden>
+              <p class="field-hint"><strong>Dasselbe Bild noch einmal – dort steht der Name schon:</strong></p>
+              <button id="face-ref-like-open" class="face-ref__pic" type="button" title="Bild öffnen"><img id="face-ref-like-img" alt=""></button>
+              <p id="face-ref-like-name" class="field-hint"></p>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+    <!-- ============================== Copies ============================== -->
+    <div id="view-dupes" class="page" hidden>
+      <div class="settings__inner settings__inner--full">
+        <h2 class="fd-title fd-title--h3">Duplikate</h2>
+        <p id="dupes-line" class="field-hint"></p>
+        <p class="field-hint">Jede Zeile ist ein Bild, das es mehrfach gibt – als gleiche Datei oder noch einmal in anderer Größe oder Qualität gespeichert. Vorgeschlagen wird, die größte Fassung zu behalten; du kannst eine andere wählen. Die übrigen wandern in den Papierkorb und lassen sich dort zurückholen.</p>
+        <div class="trash-bar">
+          <a class="fd-button" href="#/">Zurück zu den Bildern</a>
+          <button id="dupes-search" class="fd-button admin-only" type="button">Jetzt suchen</button>
+          <select id="dupes-level" class="fd-input dupes-level" aria-label="Wie ähnlich">
+            <option value="copies">Nur Kopien (gleiches Bild, anders gespeichert)</option>
+            <option value="alike">Auch sehr ähnliche Aufnahmen (HDR-Paare, zwei kurz nacheinander)</option>
+          </select>
+          <button id="dupes-all" class="fd-button admin-only" type="button" hidden>Eindeutige Kopien in den Papierkorb</button>
+          <label class="check"><input id="dupes-merge" type="checkbox" checked><span>Vorher übernehmen, was nur die anderen Fassungen wissen (Alben, Schlagworte, Namen, Beschreibung, Bewertung, Ort)</span></label>
+          <span id="dupes-msg" class="form-msg" role="status"></span>
+        </div>
+        <div id="dupe-groups" class="dupe-groups"></div>
+        <p><button id="dupes-more" class="fd-button" type="button" hidden>Weitere zeigen</button></p>
+      </div>
+    </div>
+    <!-- ============================== Trash ============================== -->
+    <div id="view-trash" class="page" hidden>
+      <div class="settings__inner settings__inner--wide">
+        <h2 class="fd-title fd-title--h3">Papierkorb</h2>
+        <p id="trash-line" class="field-hint"></p>
+        <div class="trash-bar">
+          <a class="fd-button" href="#/">Zurück zu den Bildern</a>
+          <button id="trash-empty" class="fd-button" type="button">Papierkorb leeren</button>
+          <a class="fd-button fd-button--transparent" href="#/einstellungen/papierkorb">Aufbewahrung einstellen</a>
+          <span id="trash-msg" class="form-msg" role="status"></span>
+        </div>
+        <div id="trash-list" class="trash-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== Viewer ============================== -->
+  <div id="viewer" class="viewer" hidden>
+    <div class="viewer__stage">
+      <button id="v-prev" class="viewer__nav viewer__nav--prev" type="button" aria-label="Vorheriges Bild">&#8249;</button>
+      <img id="v-img" alt="">
+      <video id="v-video" controls playsinline hidden></video>
+      <div id="v-faces" class="viewer__faces" hidden></div>
+      <div id="v-crop" class="crop" hidden>
+        <div id="v-crop-box" class="crop__box">
+          <span class="crop__grip" data-grip="nw"></span><span class="crop__grip" data-grip="ne"></span>
+          <span class="crop__grip" data-grip="sw"></span><span class="crop__grip" data-grip="se"></span>
+        </div>
+      </div>
+      <p id="v-broken" class="viewer__broken" hidden>Dieses Bild lässt sich nicht anzeigen.</p>
+      <button id="v-next" class="viewer__nav viewer__nav--next" type="button" aria-label="Nächstes Bild">&#8250;</button>
+    </div>
+    <aside class="viewer__info">
+      <div class="viewer__bar">
+        <button id="v-close" class="fd-button fd-button--transparent" type="button" aria-label="Schließen">&#10005;</button>
+        <a id="v-download" class="fd-button" href="#">Original laden</a>
+        <button id="v-live" class="fd-button" type="button" title="Den kurzen Film zu diesem Foto abspielen" hidden>&#9654; Live</button>
+      </div>
+      <h3 id="v-name" class="viewer__name"></h3>
+      <div id="v-tools" class="viewer__tools" hidden>
+        <button id="v-left" class="fd-button" type="button" title="Nach links drehen" aria-label="Nach links drehen">&#8634;</button>
+        <button id="v-right" class="fd-button" type="button" title="Nach rechts drehen" aria-label="Nach rechts drehen">&#8635;</button>
+        <button id="v-edit" class="fd-button" type="button" title="Datum, Ort, Beschreibung, Schlagworte, Alben">Angaben</button>
+        <button id="v-develop" class="fd-button" type="button" title="Zuschneiden, gerade rücken, Licht und Farben – das Original bleibt erhalten" hidden>Bild bearbeiten</button>
+        <button id="v-delete" class="fd-button" type="button" title="In den Papierkorb legen (Taste Entf)">Löschen</button>
+      </div>
+      <div id="v-ai-box" class="viewer__tools" hidden>
+        <select id="v-ai-prompt" class="fd-input" aria-label="Anweisung für die KI" hidden></select>
+        <button id="v-ai" class="fd-button" type="button">KI fragen</button>
+      </div>
+      <p id="v-msg" class="form-msg viewer__msg" role="status"></p>
+      <dl id="v-facts" class="facts"></dl>
+      <div id="v-people" class="people-edit" hidden></div>
+      <form id="v-dev" class="edit dev" hidden>
+        <p class="hint">Das Original bleibt erhalten: Gespeichert wird ein neues Bild daneben. Das Original tritt dahinter zurück und lässt sich jederzeit wieder hervorholen.</p>
+        <label class="fd-form-label" for="d-ratio">Zuschnitt</label>
+        <select class="fd-input" id="d-ratio">
+          <option value="">frei</option><option value="orig">wie das Original</option><option value="1">1 : 1</option>
+          <option value="4:3">4 : 3</option><option value="3:2">3 : 2</option><option value="16:9">16 : 9</option>
+        </select>
+        <label class="fd-form-label" for="d-angle">Gerade rücken <output id="d-angle-out"></output></label>
+        <input id="d-angle" type="range" min="-15" max="15" step="0.1" value="0">
+        <label class="fd-form-label" for="d-brightness">Helligkeit <output id="d-brightness-out"></output></label>
+        <input id="d-brightness" type="range" min="-100" max="100" step="1" value="0">
+        <label class="fd-form-label" for="d-contrast">Kontrast <output id="d-contrast-out"></output></label>
+        <input id="d-contrast" type="range" min="-100" max="100" step="1" value="0">
+        <label class="fd-form-label" for="d-saturation">Sättigung <output id="d-saturation-out"></output></label>
+        <input id="d-saturation" type="range" min="-100" max="100" step="1" value="0">
+        <label class="fd-form-label" for="d-warmth">Wärme <output id="d-warmth-out"></output></label>
+        <input id="d-warmth" type="range" min="-100" max="100" step="1" value="0">
+        <label class="dev__check"><input id="d-auto" type="checkbox"> Licht automatisch ausgleichen</label>
+        <div class="viewer__tools">
+          <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
+          <button id="d-reset" class="fd-button" type="button">Zurücksetzen</button>
+          <button id="d-cancel" class="fd-button" type="button">Abbrechen</button>
+        </div>
+        <button id="d-discard" class="fd-button" type="button" hidden>Bearbeitung verwerfen – zurück zum Original</button>
+      </form>
+      <form id="v-form" class="edit" hidden>
+        <label class="fd-form-label" for="e-taken">Datum und Uhrzeit</label>
+        <input class="fd-input" id="e-taken" type="datetime-local" step="1" required>
+        <label class="fd-form-label" for="e-place">Ort (Breite, Länge)</label>
+        <div class="place-row">
+          <input class="fd-input" id="e-place" autocomplete="off" placeholder="leer heißt: kein Ort">
+          <button id="e-map" class="fd-button" type="button">Karte …</button>
+        </div>
+        <label class="fd-form-label" for="e-desc">Beschreibung</label>
+        <textarea class="fd-textarea" id="e-desc" rows="3" maxlength="2000"></textarea>
+        <label class="fd-form-label" for="e-words">Schlagworte, durch Komma getrennt</label>
+        <input class="fd-input" id="e-words" autocomplete="off">
+        <label class="fd-form-label" for="e-albums">Alben, durch Komma getrennt (Unteralbum mit /)</label>
+        <input class="fd-input" id="e-albums" autocomplete="off" placeholder="Urlaub/USA 2010, Boote/Flo">
+        <label class="fd-form-label" for="e-rating">Bewertung</label>
+        <select class="fd-input" id="e-rating">
+          <option value="0">keine</option><option value="1">★</option><option value="2">★★</option>
+          <option value="3">★★★</option><option value="4">★★★★</option><option value="5">★★★★★</option>
+        </select>
+        <div class="edit__buttons">
+          <button class="fd-button fd-button--emphasized" type="submit">Ins Bild schreiben</button>
+          <button id="e-cancel" class="fd-button fd-button--transparent" type="button">Abbrechen</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- ============================== Several at once ============================== -->
+  <dialog id="batch" class="batch">
+    <form id="batch-form" method="dialog">
+      <h3 id="batch-title" class="fd-title fd-title--h5">Bilder ändern</h3>
+      <fieldset>
+        <legend>Datum</legend>
+        <select class="fd-input" id="b-date-mode" aria-label="Datum">
+          <option value="">nicht ändern</option><option value="shift">verschieben um</option><option value="set">für alle setzen auf</option>
+        </select>
+        <span id="b-shift" hidden>
+          <select class="fd-input" id="b-shift-dir" aria-label="Richtung"><option value="1">später</option><option value="-1">früher</option></select>
+          <input class="fd-input" id="b-shift-n" type="number" min="1" step="1" value="1" aria-label="Wie viel">
+          <select class="fd-input" id="b-shift-unit" aria-label="Einheit">
+            <option value="60">Minuten</option><option value="3600" selected>Stunden</option><option value="86400">Tage</option>
+          </select>
+        </span>
+        <input class="fd-input" id="b-date" type="datetime-local" step="1" hidden aria-label="Neues Datum">
+      </fieldset>
+      <fieldset>
+        <legend>Ort</legend>
+        <select class="fd-input" id="b-place-mode" aria-label="Ort">
+          <option value="">nicht ändern</option><option value="set">setzen auf</option><option value="clear">entfernen</option>
+        </select>
+        <span id="b-place-row" class="place-row" hidden>
+          <input class="fd-input" id="b-place" autocomplete="off" placeholder="49.84512, 7.86301" aria-label="Breite, Länge">
+          <button id="b-map" class="fd-button" type="button">Karte …</button>
+        </span>
+      </fieldset>
+      <fieldset>
+        <legend>Schlagworte</legend>
+        <label for="b-add">hinzufügen</label><input class="fd-input" id="b-add" autocomplete="off" placeholder="durch Komma getrennt">
+        <label for="b-remove">entfernen</label><input class="fd-input" id="b-remove" autocomplete="off">
+      </fieldset>
+      <fieldset>
+        <legend>Alben</legend>
+        <label for="b-album-add">hinzufügen</label><input class="fd-input" id="b-album-add" autocomplete="off" placeholder="Urlaub/USA 2010">
+        <label for="b-album-remove">entfernen</label><input class="fd-input" id="b-album-remove" autocomplete="off">
+      </fieldset>
+      <fieldset>
+        <legend>Bewertung</legend>
+        <select class="fd-input" id="b-rating" aria-label="Bewertung">
+          <option value="">nicht ändern</option><option value="0">keine</option><option value="1">★</option><option value="2">★★</option>
+          <option value="3">★★★</option><option value="4">★★★★</option><option value="5">★★★★★</option>
+        </select>
+      </fieldset>
+      <p id="batch-msg" class="form-msg" role="status"></p>
+      <div class="edit__buttons">
+        <button id="batch-go" class="fd-button fd-button--emphasized" type="submit">In die Bilder schreiben</button>
+        <button id="batch-cancel" class="fd-button fd-button--transparent" type="button">Abbrechen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ============================== Map ============================== -->
+  <dialog id="map-dialog" class="batch map-dialog">
+    <h3 class="fd-title fd-title--h5">Ort auf der Karte wählen</h3>
+    <form id="map-search" class="place-row" role="search">
+      <input class="fd-input" id="map-q" type="search" autocomplete="off" placeholder="Ort suchen, z. B. Bad Pyrmont" aria-label="Ort suchen">
+      <button class="fd-button" type="submit">Suchen</button>
+    </form>
+    <div id="map-hits" class="map-hits"></div>
+    <div id="map" class="map" role="application" aria-label="Karte: Klick setzt den Ort, die Nadel lässt sich ziehen"></div>
+    <p id="map-where" class="form-msg map-where" role="status"></p>
+    <div class="edit__buttons">
+      <button id="map-ok" class="fd-button fd-button--emphasized" type="button">Übernehmen</button>
+      <button id="map-cancel" class="fd-button fd-button--transparent" type="button">Abbrechen</button>
+      <span class="field-hint map-note">Karte und Suche kommen von OpenStreetMap.</span>
+    </div>
+  </dialog>
+
+  <div id="tree-menu" class="ctx-menu" role="menu" hidden></div>
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="i18n.js"></script>
+  <script src="i18n-en.js"></script>
+  <script src="i18n-fr.js"></script>
+  <script src="i18n-it.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

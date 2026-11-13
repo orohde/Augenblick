@@ -1,0 +1,15 @@
+# Example deployment. Adjust the host paths and start it.
+services:
+  augenblick:
+    build: .
+    container_name: augenblick
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8450}:8000"
+    volumes:
+      - ./fotos:/fotos:ro     # your photo folders – each folder directly below is an area
+                              # to let Augenblick! write: remove ":ro" and set AUGENBLICK_READONLY=false below
+      - ./data:/data          # index, previews, settings
+    environment:
+      - TZ=Europe/Berlin
+      # - AUGENBLICK_READONLY=false
