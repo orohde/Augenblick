@@ -149,6 +149,8 @@
         <button id="sel-right" class="fd-button" type="button" title="Nach rechts drehen" aria-label="Nach rechts drehen">&#8635;</button>
         <button id="sel-sort" class="fd-button" type="button" hidden title="Legt die Bilder dorthin, wo sie nach den Regeln hingehören">Einsortieren</button>
         <select id="sel-move" class="fd-input toolbar__select" aria-label="In einen anderen Bereich verschieben" hidden></select>
+        <button id="sel-propose" class="fd-button" type="button" title="Die KI sieht sich die ausgewählten Bilder an und schlägt Beschreibung und Schlagworte vor – nichts wird geschrieben" hidden>KI-Vorschläge holen</button>
+        <select id="sel-take" class="fd-input toolbar__select" aria-label="Vorschläge übernehmen und einsortieren" hidden></select>
         <button id="sel-delete" class="fd-button" type="button">Löschen</button>
         <button id="sel-all" class="fd-button fd-button--transparent" type="button" title="Alle Bilder der Ansicht auswählen, über alle Monate">Alles auswählen</button>
         <button id="sel-none" class="fd-button fd-button--transparent" type="button">Auswahl aufheben</button>
@@ -419,6 +421,8 @@
                 <label class="check"><input type="checkbox" id="ai-enabled"> <span>KI einschalten</span></label>
                 <span></span>
                 <label class="check"><input type="checkbox" id="ai-memories"> <span>KI darf Erinnerungen benennen <span class="hint">– nur auf Knopfdruck je Erinnerung: Sie bekommt bis zu acht verkleinerte Bilder und schlägt Titel, einen Satz und das Titelbild vor.</span></span></label>
+                <span></span>
+                <label class="check"><input type="checkbox" id="ai-inbox-auto"> <span>Eingang: KI sieht sich neue Bilder von selbst an <span class="hint">– jedes Bild, das ankommt, einmal; Beschreibung und Schlagworte bleiben Vorschlag, bis du sie beim Einsortieren übernimmst. Kostet je Bild eine Anfrage.</span></span></label>
                 <label class="fd-form-label" for="ai-provider">Anbieter</label>
                 <select class="fd-input" id="ai-provider">
                   <option value="anthropic">Claude (Anthropic)</option>
@@ -741,6 +745,21 @@
         <select id="v-ai-prompt" class="fd-input" aria-label="Anweisung für die KI" hidden></select>
         <button id="v-ai" class="fd-button" type="button">KI fragen</button>
       </div>
+      <section id="v-inbox" class="inbox-take" hidden>
+        <h4 class="inbox-take__title">Aus dem Eingang einsortieren</h4>
+        <p id="v-inbox-none" class="hint">Die KI hat sich das Bild noch nicht angesehen.</p>
+        <div id="v-inbox-idea" hidden>
+          <p class="hint" id="v-inbox-from"></p>
+          <label class="check inbox-take__desc"><input id="v-inbox-desc-on" type="checkbox" checked> <span id="v-inbox-desc"></span></label>
+          <div id="v-inbox-words" class="inbox-take__words" aria-label="Vorgeschlagene Schlagworte – anklicken schließt eins aus"></div>
+          <label id="v-inbox-date-row" class="check" hidden><input id="v-inbox-date-on" type="checkbox"> <span id="v-inbox-date"></span></label>
+        </div>
+        <div class="inbox-take__go">
+          <select id="v-inbox-area" class="fd-input" aria-label="In welchen Bereich"></select>
+          <button id="v-inbox-take" class="fd-button fd-button--emphasized" type="button" title="Die gewählten Angaben ins Bild schreiben und es in den Bereich legen – dort, wo seine Regel es haben will. Danach kommt das nächste Bild.">Übernehmen &amp; einsortieren</button>
+          <button id="v-inbox-drop" class="fd-button fd-button--transparent" type="button" title="Den Vorschlag wegwerfen; die KI fragt für dieses Bild nicht von selbst noch einmal" hidden>Vorschlag verwerfen</button>
+        </div>
+      </section>
       <p id="v-msg" class="form-msg viewer__msg" role="status"></p>
       <dl id="v-facts" class="facts"></dl>
       <div id="v-people" class="people-edit" hidden></div>

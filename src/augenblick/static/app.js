@@ -1092,6 +1092,7 @@ function showPhoto(photo) {
   $('v-develop').textContent = photo.original ? t('Bild weiter bearbeiten') : t('Bild bearbeiten');
   devClose();
   $('v-ai-box').hidden = !(State.ai.enabled && photo.can_write && !photo.error && !State.ai.excluded_areas.includes(photo.area));
+  showTake(photo);
   $('v-left').hidden = $('v-right').hidden = !photo.can_turn;
   $('v-form').hidden = true;
   $('v-facts').hidden = false;
@@ -2169,7 +2170,7 @@ function markSelection() {
   }
   const n = State.selected.size;
   $('sel-count').textContent = n === 0 ? t('Nichts ausgewählt') : n === 1 ? t('1 Bild ausgewählt') : t('{0} Bilder ausgewählt', [number(n)]);
-  for (const id of ['sel-edit', 'sel-left', 'sel-right', 'sel-none', 'sel-delete']) $(id).disabled = n === 0;
+  for (const id of ['sel-edit', 'sel-left', 'sel-right', 'sel-none', 'sel-delete', 'sel-propose', 'sel-take']) $(id).disabled = n === 0;
 }
 
 let lastPicked = null;
@@ -2296,6 +2297,151 @@ $('batch-form').addEventListener('submit', async (event) => {
   else $('batch-go').disabled = false;
 });
 
+// ----------------------------------------------------------------- the inbox, worked through
+/* What the phone sent waits in the inbox. The AI may have looked at a picture already (by itself, if that is
+   switched on, or when asked); its description and keywords stay a proposal. In the viewer one strikes out what
+   does not fit and sorts the picture in – the chosen proposal is written into it, it goes where the rule of the
+   chosen area wants it, and the next picture of the inbox comes up. Several chosen pictures go the same way,
+   each with all of its proposal. */
+
+const Take = { off: new Set() };       // proposed keywords struck out for the picture on screen
+const takeTargets = () => (State.me ? State.areas.filter((a) => !a.inbox && State.me.write.includes(a.name)) : []);
+
+function fillTakeTargets(select, first) {
+  const targets = takeTargets();
+  const saved = store.get('inboxTarget', '');
+  select.replaceChildren(...(first ? [el('option', { value: '' }, first)] : []),
+    ...targets.map((a) => el('option', { value: a.name }, a.name)));
+  if (!first) select.value = targets.some((a) => a.name === saved) ? saved : targets.length ? targets[0].name : '';
+}
+
+function showTake(photo) {
+  const box = $('v-inbox');
+  box.hidden = !(photo.inbox && photo.can_delete && takeTargets().length);
+  if (box.hidden) return;
+  fillTakeTargets($('v-inbox-area'));
+  const idea = photo.proposal;
+  Take.off = new Set();
+  $('v-inbox-none').hidden = Boolean(idea);
+  $('v-inbox-none').textContent = State.ai.enabled && photo.can_write
+    ? t('Die KI hat sich das Bild noch nicht angesehen.') : t('Das Bild wird so einsortiert, wie es ist.');
+  $('v-inbox-idea').hidden = !idea;
+  $('v-inbox-drop').hidden = !idea;
+  if (!idea) return;
+  $('v-inbox-from').textContent = t('Vorschlag der KI ({0}{1})', [idea.model || 'KI', cents(idea.cost)]);
+  $('v-inbox-desc').textContent = idea.description || '';
+  $('v-inbox-desc-on').closest('label').hidden = !idea.description;
+  $('v-inbox-desc-on').checked = Boolean(idea.description) && !(photo.description || '').trim();     // one already there wins
+  const words = (idea.keywords || []).filter((word) => !photo.keywords.includes(word));
+  $('v-inbox-words').replaceChildren(...words.map((word) => {
+    const chip = el('button', { class: 'tag inbox-word', type: 'button', 'aria-pressed': 'true', title: t('Anklicken: nicht übernehmen') }, word);
+    chip.addEventListener('click', () => {
+      const off = !Take.off.has(word);
+      if (off) Take.off.add(word); else Take.off.delete(word);
+      chip.setAttribute('aria-pressed', String(!off));
+      chip.title = off ? t('Anklicken: doch übernehmen') : t('Anklicken: nicht übernehmen');
+    });
+    return chip;
+  }));
+  const dated = idea.date && photo.taken_src !== 'exif';
+  $('v-inbox-date-row').hidden = !dated;
+  $('v-inbox-date-on').checked = false;
+  if (dated) {
+    const when = new Date(idea.date.taken).toLocaleDateString(LOCALE, idea.date.precision === 'year' ? { year: 'numeric' }
+      : idea.date.precision === 'month' ? { month: 'long', year: 'numeric' } : { day: 'numeric', month: 'long', year: 'numeric' });
+    $('v-inbox-date').textContent = t('Geschätztes Datum übernehmen: {0}', [when]);
+  }
+}
+
+function forget(key) {         // a picture that left the view: leafing on skips it
+  for (const items of State.items.values()) {
+    const at = items.findIndex((i) => i.key === key);
+    if (at >= 0) items.splice(at, 1);
+  }
+  State.selected.delete(key);
+}
+
+$('v-inbox-take').addEventListener('click', async () => {
+  const photo = Viewer.photo; const area = $('v-inbox-area').value;
+  if (!photo || !area) return;
+  store.set('inboxTarget', area);
+  const idea = photo.proposal;
+  const body = { keys: [photo.key], area };
+  if (idea) {
+    body.description = $('v-inbox-desc-on').checked ? idea.description || '' : '';
+    body.keywords = (idea.keywords || []).filter((word) => !Take.off.has(word) && !photo.keywords.includes(word));
+    if (!$('v-inbox-date-row').hidden && $('v-inbox-date-on').checked) body.taken = idea.date.taken;
+  } else body.take = false;
+  $('v-inbox-take').disabled = true;
+  message($('v-msg'), t('Wird einsortiert …'));
+  try {
+    const next = (await neighbour(1)) || (await neighbour(-1));
+    const [result] = await api('inbox/accept', { method: 'POST', body: JSON.stringify(body) });
+    if (!result.ok) throw new Error(result.error);
+    forget(photo.key);
+    State.dirty = true;
+    try { State.areas = await api('areas'); showInbox(); } catch { /* the next look fixes the number */ }
+    if (Viewer.key !== photo.key) return;
+    if (next && next.key !== photo.key) {
+      await openViewer(next.key, next.month);
+      message($('v-msg'), t('Das vorige Bild liegt jetzt in {0}.', [result.photo.folder]));
+    } else closeViewer();
+  } catch (err) { message($('v-msg'), explain(err.message), true); }
+  finally { $('v-inbox-take').disabled = false; }
+});
+
+$('v-inbox-drop').addEventListener('click', async () => {
+  const photo = Viewer.photo;
+  try {
+    await api(`photos/${photo.key}/proposal`, { method: 'DELETE' });
+    photo.proposal = null;
+    showTake(photo);
+    message($('v-msg'), t('Vorschlag verworfen.'));
+  } catch (err) { message($('v-msg'), explain(err.message), true); }
+});
+
+$('sel-take').addEventListener('change', async (event) => {
+  const area = event.target.value;
+  event.target.value = '';
+  const n = State.selected.size;
+  if (!area || !n) return;
+  if (!window.confirm(n === 1 ? t('Das Bild mit dem Vorschlag der KI nach {0} einsortieren?', [area])
+    : t('{0} Bilder mit den Vorschlägen der KI nach {1} einsortieren?', [number(n), area]))) return;
+  store.set('inboxTarget', area);
+  event.target.disabled = true;
+  await runMany('inbox/accept', { area }, (text, isBad) => message($('sel-msg'), text, isBad), t('einsortiert'));
+  event.target.disabled = false;
+  State.areas = await api('areas');
+  showInbox();
+});
+
+let proposalTimer = 0;
+async function watchProposals() {
+  clearTimeout(proposalTimer);
+  let state;
+  try { state = await api('inbox/proposals', { quiet: true }); } catch { return; }
+  const busy = state.running || state.waiting > 0;
+  if (busy) message($('sel-msg'), t('Die KI sieht sich die Bilder an: {0} fertig, {1} offen.', [number(state.done), number(state.left + state.waiting)]));
+  else if (state.error) message($('sel-msg'), explain(state.error), true);
+  else message($('sel-msg'), t('Die Vorschläge der KI sind da – sie stehen in der Großansicht jedes Bildes.'));
+  if (busy) proposalTimer = setTimeout(watchProposals, 3000);
+}
+
+$('sel-propose').addEventListener('click', async () => {
+  const keys = [...State.selected];
+  if (!keys.length) return;
+  $('sel-propose').disabled = true;
+  try {
+    let queued = 0;
+    for (let i = 0; i < keys.length; i += 500) {
+      queued += (await api('inbox/proposals', { method: 'POST', body: JSON.stringify({ keys: keys.slice(i, i + 500) }) })).queued;
+    }
+    message($('sel-msg'), t('{0} Bilder an die KI gegeben.', [number(queued)]));
+    proposalTimer = setTimeout(watchProposals, 1500);
+  } catch (err) { message($('sel-msg'), explain(err.message), true); }
+  finally { $('sel-propose').disabled = false; }
+});
+
 // ----------------------------------------------------------------- sorting
 
 async function sortShown() {
@@ -2313,9 +2459,12 @@ async function sortShown() {
 function fillMoveTargets() {
   const select = $('sel-move');
   const targets = State.areas.filter((a) => State.me.write.includes(a.name));
-  select.hidden = targets.length < 2;
+  select.hidden = targets.length < 2 || State.inbox;      // in the inbox: sorted in with the proposals instead
   select.replaceChildren(el('option', { value: '' }, t('Verschieben nach …')),
     ...targets.map((a) => el('option', { value: a.name }, a.name)));
+  $('sel-take').hidden = !State.inbox || !takeTargets().length;
+  fillTakeTargets($('sel-take'), t('Übernehmen & einsortieren nach …'));
+  $('sel-propose').hidden = !State.inbox || !State.ai.enabled;
 }
 
 $('sel-move').addEventListener('change', async (event) => {
@@ -2546,6 +2695,7 @@ async function loadAiOffer() {
   select.replaceChildren(...State.ai.prompts.map((name) => el('option', { value: name }, name)));
   select.value = State.ai.default;
   select.hidden = State.ai.prompts.length < 2;
+  if (State.me) fillMoveTargets();
 }
 
 const cents = (usd) => (usd > 0 ? `, ${(usd * 100).toLocaleString(LOCALE, { maximumFractionDigits: 2 })} ct` : '');
@@ -2557,6 +2707,12 @@ $('v-ai').addEventListener('click', async () => {
   try {
     const idea = await api(`photos/${photo.key}/ai`, { method: 'POST', body: JSON.stringify({ prompt: $('v-ai-prompt').value || null }) });
     if (Viewer.key !== photo.key) return;
+    if (photo.inbox && !$('v-inbox').hidden) {      // kept as the proposal; chosen from when sorting it in
+      photo.proposal = idea;
+      showTake(photo);
+      message($('v-msg'), t('Vorschlag der KI ({0}{1}). Wähle aus, was ins Bild soll, dann „Übernehmen & einsortieren“.', [idea.model, cents(idea.cost)]));
+      return;
+    }
     $('v-edit').click();
     if (idea.description) $('e-desc').value = idea.description;
     if (idea.keywords.length) $('e-words').value = [...new Set([...photo.keywords, ...idea.keywords])].join(', ');
@@ -2583,6 +2739,7 @@ function promptRow(prompt, isDefault) {
 function showAI(config) {
   $('ai-enabled').checked = config.enabled;
   $('ai-memories').checked = Boolean(config.memories);
+  $('ai-inbox-auto').checked = Boolean(config.inbox_auto);
   $('ai-provider').value = config.provider;
   $('ai-url').value = config.base_url;
   $('ai-key').value = '';
@@ -2609,7 +2766,7 @@ async function saveAI(extra = {}) {
   const prompts = rows.map((row) => ({ name: row.querySelector('input.fd-input').value, text: row.querySelector('textarea').value }));
   const chosen = rows.find((row) => row.querySelector('input[type=radio]').checked);
   const body = {
-    enabled: $('ai-enabled').checked, memories: $('ai-memories').checked, provider: $('ai-provider').value, model: $('ai-model').value.trim(),
+    enabled: $('ai-enabled').checked, memories: $('ai-memories').checked, inbox_auto: $('ai-inbox-auto').checked, provider: $('ai-provider').value, model: $('ai-model').value.trim(),
     base_url: $('ai-url').value.trim(), monthly_limit_usd: Number($('ai-limit').value) || 0,
     excluded_areas: [...$('ai-areas').querySelectorAll('input:checked')].map((box) => box.value),
     prompts, default_prompt: chosen ? chosen.querySelector('input.fd-input').value.trim() : '', ...extra,

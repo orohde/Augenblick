@@ -92,6 +92,7 @@ class AIConfig:
     prompts: list[dict] = field(default_factory=list)  # [{name, text}] for "KI fragen"; empty = the built-in one
     default_prompt: str = ""      # name of the instruction that is preselected
     memories: bool = False        # may be asked to name a memory and choose the picture that stands for it
+    inbox_auto: bool = False      # looks at what arrives in the inbox by itself and proposes, as in Ordnung!
     usage: dict[str, dict] = field(default_factory=dict)  # "YYYY-MM" -> {calls, input, output, cost}
 
     def public(self) -> dict:
@@ -184,7 +185,7 @@ class AIService:
             if "provider" in changes and changes["provider"] not in PROVIDERS:
                 raise AIError("unknown provider")
             for key in ("enabled", "provider", "model", "base_url", "monthly_limit_usd", "excluded_areas",
-                        "default_prompt", "memories"):
+                        "default_prompt", "memories", "inbox_auto"):
                 if key in changes and changes[key] is not None:
                     setattr(config, key, changes[key])
             if changes.get("prompts") is not None:

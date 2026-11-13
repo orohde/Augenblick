@@ -35,6 +35,8 @@ from .geo import Geo
 from .immich import Immich, ImmichError, edits_for, plan as immich_plan
 from .index import Index
 from .journal import Journal
+from .lang import known as known_lang
+from .proposals import Proposals
 from .sort import MODES, TOKENS, Rules, SortError, Sorter, clean_rules
 from .trash import Prefs, Trash, TrashError
 from .upload import Inbox, mount as mount_upload
@@ -197,9 +199,22 @@ class Many(BaseModel):
     batch: str | None = Field(None, pattern=r"^[0-9a-f]{6,32}$", description="ties several calls into one change")
 
 
+class InboxPropose(BaseModel):
+    keys: list[str] = Field(min_length=1, max_length=500)
+
+
 class ManyMove(Many):
     area: str = Field("", max_length=40, description="the area the photos go to")
     folder: str = Field("", max_length=1000, description="or the folder, with its area in front: Familie/2024")
+
+
+class InboxAccept(ManyMove):
+    """Take what the AI proposed over into the pictures and hand them on, out of the inbox."""
+    take: bool = Field(True, description="write the stored proposal into each picture before it leaves")
+    description: str | None = Field(None, max_length=2000, description="for one picture: this description instead")
+    keywords: list[str] | None = Field(None, max_length=200, description="for one picture: these keywords instead")
+    taken: str | None = Field(None, pattern=r"^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d)?$",
+                              description="for one picture: this date, where the picture says none itself")
 
 
 class FolderIn(BaseModel):
@@ -222,6 +237,7 @@ class AIChange(BaseModel):
     prompts: list[dict] | None = None
     default_prompt: str | None = Field(None, max_length=100)
     memories: bool | None = None
+    inbox_auto: bool | None = None
 
 
 class AskAI(BaseModel):
@@ -313,6 +329,7 @@ def _worker(app: FastAPI, stop: threading.Event) -> None:
         except Exception:
             log.exception("scan failed")
         app.state.faces_wake.set()
+        app.state.inbox_wake.set()
         app.state.wake.wait(max(1, settings.rescan_minutes) * 60)
         app.state.wake.clear()
 
@@ -353,6 +370,20 @@ def _face_worker(app: FastAPI, stop: threading.Event) -> None:
             log.exception("face search failed")
 
 
+def _inbox_worker(app: FastAPI, stop: threading.Event) -> None:
+    """Lets the AI look at the pictures in the inbox: those put in line by hand, and – where that is
+    switched on – whatever arrives. One at a time, beside everything else."""
+    while not stop.is_set():
+        app.state.inbox_wake.wait(300)
+        app.state.inbox_wake.clear()
+        if stop.is_set() or app.state.index.progress["running"]:
+            continue
+        try:
+            app.state.propose_round(stop)
+        except Exception:
+            log.exception("inbox proposals failed")
+
+
 def create_app(settings: Settings | None = None, background: bool = True) -> FastAPI:
     settings = settings or load_settings()
 
@@ -362,12 +393,14 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         if background:
             threading.Thread(target=_worker, args=(app, stop), daemon=True).start()
             threading.Thread(target=_face_worker, args=(app, stop), daemon=True).start()
+            threading.Thread(target=_inbox_worker, args=(app, stop), daemon=True).start()
             if not settings.readonly:
                 threading.Thread(target=_decisions_worker, args=(app, stop), daemon=True).start()
         yield
         stop.set()
         app.state.wake.set()
         app.state.faces_wake.set()
+        app.state.inbox_wake.set()
 
     app = FastAPI(
         title="Augenblick!",
@@ -389,6 +422,7 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     app.state.guard = LoginGuard()
     app.state.wake = threading.Event()
     app.state.faces_wake = threading.Event()
+    app.state.inbox_wake = threading.Event()
     index: Index = app.state.index
     index.geo = Geo(settings.geo_path)
     journal = app.state.journal = Journal(settings.journal_path)
@@ -396,6 +430,7 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     prefs = app.state.prefs = Prefs(settings.data / "settings.json")
     app.state.user_prefs = PrefsStore(settings.data / "prefs.json")
     ai = app.state.ai = AIService(settings.data / "ai.json")
+    proposals = app.state.proposals = Proposals(settings.data / "proposals.db")
     index.planner = Rules(prefs.load()["sort_rules"])
 
     def area_options() -> dict[str, dict]:
@@ -439,7 +474,11 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         names = [a["name"] for a in index.areas()]
         if stored is True:
             return names
-        return [name for name in names if isinstance(stored, list) and name in stored]
+        chosen = [name for name in names if isinstance(stored, list) and name in stored]
+        if chosen:          # what the phone sends is looked at too, so names can be given before it is sorted
+            inbox_areas = app.state.inbox.areas()
+            chosen += [name for name in names if name in inbox_areas and name not in chosen]
+        return chosen
 
     app.state.face_areas = face_areas
 
@@ -873,6 +912,8 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         data["can_write"] = data["can_delete"] and data["kind"] == "image" and data["ext"] not in RAW_EXT
         data["can_turn"] = data["can_write"] and data["ext"] in ("jpg", "jpeg", "heic", "heif")
         data["can_develop"] = data["can_write"] and data["ext"] != "gif" and not data["error"]
+        data["inbox"] = data["area"] in app.state.inbox.areas()       # sent by the phone, not sorted yet
+        data["proposal"] = proposals.get(data["path"]) if data["inbox"] else None
         return data
 
     def rendered(photo: dict, cache: Path, edge: int) -> Response:
@@ -1737,7 +1778,8 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         config = ai.load()
         offered, default = prompts_of(config, lang)
         return {"enabled": config.enabled, "prompts": [p["name"] for p in offered], "default": default,
-                "excluded_areas": config.excluded_areas, "memories": config.enabled and config.memories}
+                "excluded_areas": config.excluded_areas, "memories": config.enabled and config.memories,
+                "inbox_auto": config.enabled and config.inbox_auto}
 
     # ---------------------------------------------------------- memories
 
@@ -1820,19 +1862,151 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
             if not task:
                 raise HTTPException(status_code=404, detail="unknown instruction")
         try:
-            image, _ = read_image(file_of(photo).read_bytes())
-            picture = render(image, 1568)
-        except HTTPException:
-            raise
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail="the picture cannot be read") from exc
-        prompt = photo_prompt(photo, task, index.common_keywords([photo["area"]]))
-        try:
-            answer = ai.complete(in_language(PHOTO_SYSTEM, lang), prompt, max_tokens=4000, images=[picture])
-            suggestion = parse_suggestion(answer.text)
+            answer = look_at(photo, task, lang)
         except AIError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {**suggestion, "model": answer.model, "seconds": answer.seconds, "cost": answer.cost}
+        if photo["area"] in app.state.inbox.areas():
+            proposals.put(photo["path"], answer)        # kept, so it is still there when the picture is opened again
+        return answer
+
+    def look_at(photo: dict, task: str, lang: str) -> dict:
+        """Show the picture to the AI with the task; what comes back is a proposal, nothing is written."""
+        try:
+            image, _ = read_image(file_of(photo).read_bytes())
+            picture = render(image, 1568)
+        except HTTPException as exc:
+            raise AIError("the picture cannot be read") from exc
+        except Exception as exc:
+            raise AIError("the picture cannot be read") from exc
+        prompt = photo_prompt(photo, task, index.common_keywords([photo["area"]]))
+        answer = ai.complete(in_language(PHOTO_SYSTEM, lang), prompt, max_tokens=4000, images=[picture])
+        return {**parse_suggestion(answer.text), "model": answer.model, "seconds": answer.seconds, "cost": answer.cost}
+
+    # ------------------------------------------------------------- inbox
+
+    def inbox_pictures() -> list[dict]:
+        areas = app.state.inbox.areas()
+        return index.pictures(areas) if areas else []
+
+    def propose_round(stop: threading.Event, most: int = 25) -> int:
+        """One round of the AI looking at inbox pictures: first those put in line by hand, then – if
+        switched on – those nobody has asked about yet. Stops at the monthly limit."""
+        pictures = inbox_pictures()
+        by_path = {p["path"]: p for p in pictures}
+        proposals.tidy(set(by_path))
+        config = ai.load()
+        if not config.enabled:
+            proposals.clear_line()
+            return 0
+        line = [p for p in proposals.wanted() if p in by_path]
+        if config.inbox_auto:
+            known = proposals.known()
+            line += [p["path"] for p in pictures if p["path"] not in known and p["path"] not in line]
+        line = [p for p in line if ai.allowed_for(by_path[p]["area"])]
+        if not line:
+            return 0
+        lang = known_lang(app.state.security.load().language)
+        offered, default = prompts_of(config, lang)
+        task = next((p["text"] for p in offered if p["name"].casefold() == default.casefold()), offered[0]["text"])
+        done = 0
+        proposals.progress.update(running=True, done=0, left=len(line[:most]), error="")
+        try:
+            for path in line[:most]:
+                if stop.is_set():
+                    break
+                current = index.by_path(path)
+                if current:
+                    try:
+                        proposals.put(path, look_at(current, task, lang))
+                    except AIError as exc:
+                        if "limit" in str(exc) or "disabled" in str(exc):
+                            proposals.progress["error"] = str(exc)
+                            break               # nothing more this month – or switched off meanwhile
+                        proposals.fail(path, str(exc))
+                proposals.served(path)
+                done += 1
+                proposals.progress.update(done=done, left=len(line[:most]) - done)
+        finally:
+            proposals.progress["running"] = False
+        if done:
+            log.info("inbox: the AI looked at %s pictures", done)
+            if len(line) > most:
+                app.state.inbox_wake.set()      # more is waiting
+        return done
+
+    app.state.propose_round = propose_round
+
+    @app.get("/api/inbox/proposals", tags=["inbox"])
+    def inbox_proposals(user: User = Depends(current_user)):
+        """How far the AI is with the inbox: waiting, done, and whether it looks by itself."""
+        config = ai.load()
+        return {**proposals.progress, "waiting": len(proposals.wanted()),
+                "auto": config.enabled and config.inbox_auto}
+
+    @app.post("/api/inbox/proposals", tags=["inbox"], status_code=202)
+    def inbox_want(body: InboxPropose, user: User = Depends(current_user)):
+        """Put chosen pictures of the inbox in line for the AI; it looks at them shortly after."""
+        if not ai.load().enabled:
+            raise HTTPException(status_code=422, detail="AI is disabled")
+        inbox_areas = app.state.inbox.areas()
+        paths = []
+        for key in body.keys:
+            photo = index.photo(key, allowed_areas(user))
+            if photo and photo["area"] in inbox_areas and photo["kind"] == "image" and not photo["error"] \
+                    and user.can_write(photo["area"]) and ai.allowed_for(photo["area"]):
+                paths.append(photo["path"])
+        added = proposals.want(paths)
+        app.state.inbox_wake.set()
+        return {"queued": added, "skipped": len(body.keys) - len(paths)}
+
+    @app.delete("/api/photos/{key}/proposal", tags=["inbox"])
+    def drop_proposal(key: str, user: User = Depends(current_user)):
+        """Throw away what the AI proposed for this picture; it is not asked again by itself."""
+        photo = writable(photo_or_404(key, user), user)
+        proposals.fail(photo["path"], "thrown away")
+        return {"ok": True}
+
+    @app.post("/api/inbox/accept", tags=["inbox"])
+    def inbox_accept(body: InboxAccept, user: User = Depends(current_user)):
+        """Write what the AI proposed into the pictures – the keywords added to those there, the
+        description where there is none yet – and hand them on to another area, where its rule wants
+        them. For one picture, the person's own choice can be given instead of the stored proposal."""
+        folder = (body.folder or body.area).strip("/")
+        area = folder.split("/", 1)[0]
+        inbox_areas = app.state.inbox.areas()
+        if not area or area in inbox_areas or area not in allowed_areas(user) or not user.can_write(area):
+            raise HTTPException(status_code=403, detail="no write access to this area")
+        single = len(body.keys) == 1 and (body.description is not None or body.keywords is not None
+                                          or body.taken is not None)
+
+        def accept_one(photo: dict) -> dict:
+            if photo["area"] not in inbox_areas:
+                raise EditError("not in the inbox")
+            change: dict = {}
+            if single:
+                if body.description is not None and body.description.strip():
+                    change["description"] = body.description.strip()
+                if body.keywords:
+                    change["add_keywords"] = body.keywords
+                if body.taken and photo["taken_src"] != "exif":
+                    change["taken"] = body.taken
+            elif body.take:
+                idea = proposals.get(photo["path"]) or {}
+                if idea.get("description") and not (photo.get("description") or "").strip():
+                    change["description"] = idea["description"]
+                if idea.get("keywords"):
+                    change["add_keywords"] = idea["keywords"]
+            record = photo
+            if change and photo["kind"] == "image" and photo["ext"] not in RAW_EXT and not photo["error"]:
+                record = editor.change(photo, Change(**change).model_dump(), user.name, body.batch)
+            try:
+                moved = sorter.transfer(record, folder, user.name, body.batch)
+            except SortError as exc:
+                raise EditError(str(exc)) from exc
+            proposals.drop(photo["path"])
+            return moved
+
+        return many(accept_one, body.keys, user)
 
     # ------------------------------------------------------------- trash
 

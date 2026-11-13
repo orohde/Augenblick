@@ -27,6 +27,7 @@ Most photo servers take your pictures into a store of their own and keep what yo
 - **Duplicates**, also the same picture in another size; what only the copy knows is merged first.
 - **Sorting by rules**, if you want: a folder per year, file names from the date – with a preview, never without your say.
 - **Upload from the phone** over WebDAV (PhotoSync and others) into an inbox, with a key per phone that can do nothing but deliver.
+- **Working through the inbox:** the AI proposes a description and keywords for what arrives (on request or by itself), and faces are found there already. Strike out what does not fit and sort the picture in with one click – then the next one comes up.
 - **Films and Live Photos**, HEIC, ProRAW (DNG, read only).
 - **Areas and rights per person**, second factor, home-network rules, notifications via ntfy, REST API (`/api/docs`).
 - **AI if you want it** (Claude, Ollama or any OpenAI-compatible server): proposes descriptions and keywords, names a memory – it never writes by itself.

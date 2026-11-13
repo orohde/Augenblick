@@ -25,6 +25,7 @@ Die meisten Fotoserver nehmen deine Bilder in eine eigene Ablage und merken sich
 - **Duplikate**, auch dasselbe Bild in anderer Größe; was nur die Kopie weiß, wird vorher übernommen.
 - **Ordnen nach Regeln**, wenn du magst: ein Ordner je Jahr, Dateiname aus dem Datum – mit Vorschau, nie ohne deine Ansage.
 - **Upload vom Telefon** über WebDAV (PhotoSync und andere) in einen Eingang, mit einem Schlüssel je Telefon, der nichts kann außer abliefern.
+- **Eingang abarbeiten:** Die KI schlägt für Neues Beschreibung und Schlagworte vor (auf Knopfdruck oder von selbst), Gesichter werden schon dort erkannt. Du streichst, was nicht passt, und sortierst mit einem Klick ein – danach kommt das nächste Bild.
 - **Filme und Live Photos**, HEIC, ProRAW (DNG, nur lesend).
 - **Bereiche und Rechte je Person**, zweiter Faktor, Heimnetz-Regeln, Meldungen über ntfy, REST-API (`/api/docs`).
 - **KI, wenn du willst** (Claude, Ollama oder ein anderer OpenAI-kompatibler Dienst): schlägt Beschreibung und Schlagworte vor, benennt eine Erinnerung – sie schreibt nie selbst.

@@ -68,7 +68,7 @@ def test_ai_settings(rw, model):
                                     "default_prompt": "Lang"}).json()
     assert state["builtin"] is False and state["default_prompt"] == "Lang"
     assert rw.get("/api/ai/prompts").json() == {"enabled": True, "prompts": ["Kurz", "Lang"], "default": "Lang",
-                                                "excluded_areas": [], "memories": False}
+                                                "excluded_areas": [], "memories": False, "inbox_auto": False}
     assert rw.put("/api/ai", json={"prompts": [{"name": "A", "text": "x"}, {"name": "a", "text": "y"}]}).status_code == 400
 
 
