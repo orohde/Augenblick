@@ -15,6 +15,8 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
+import os
+import shutil
 import sqlite3
 import sys
 import threading
@@ -301,6 +303,36 @@ class People:
             db.close()
         return len(faces)
 
+    def follow(self, old: str, new: str, still: bool = False) -> int:
+        """The same picture under another hash: words were written into a file whose hash covers all
+        of it (a PNG). The faces found in it are still the faces in it – they go along instead of
+        being lost until the search comes by again. `still`: another file keeps the old hash."""
+        db = self._connect()
+        try:
+            with self._write:
+                seen = db.execute("SELECT engine, found, error, ts FROM pictures WHERE hash = ?", (old,)).fetchone()
+                if not seen or db.execute("SELECT 1 FROM pictures WHERE hash = ?", (new,)).fetchone():
+                    return 0
+                rows = db.execute("SELECT x, y, w, h FROM faces WHERE hash = ?", (old,)).fetchall()
+                if still:
+                    db.execute("INSERT INTO pictures VALUES (?, ?, ?, ?, ?)", (new, *seen))
+                    db.execute("INSERT INTO faces (hash, x, y, w, h, score, vector) SELECT ?, x, y, w, h, score, vector "
+                               "FROM faces WHERE hash = ? ORDER BY id", (new, old))
+                else:               # the faces keep their numbers: what is on the screen stays true
+                    db.execute("UPDATE pictures SET hash = ? WHERE hash = ?", (new, old))
+                    db.execute("UPDATE faces SET hash = ? WHERE hash = ?", (new, old))
+                db.commit()
+                self._changes += 1
+        finally:
+            db.close()
+        for face in rows:           # the small cut-outs are named after the hash
+            source = self._thumb(old, face)
+            if source.exists():
+                target = self._thumb(new, face)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                (shutil.copyfile if still else os.replace)(source, target)
+        return len(rows)
+
     def tidy(self, areas: list[str] | None = None) -> int:
         """Forget the faces of pictures that are no longer there – and of those in areas where
         faces are not to be looked for (any more)."""
@@ -506,6 +538,7 @@ class People:
         ] if photo["area"] in areas else []
         ignored = self._ignored(photo["hash"]).get(photo["hash"], [])
         marked = set()
+        nameless: list[tuple[dict, dict]] = []
         for region in photo["regions"]:
             if not is_face(region["type"]):
                 continue
@@ -515,15 +548,24 @@ class People:
             x, y, w, h = turn_box(there, orientation)
             shown.append({"x": x, "y": y, "w": w, "h": h, "name": region["name"], "marked": True,
                           "face": same[0] if same else None, "proposal": "", "ignored": False})
+            if same and not region["name"]:     # marked by the camera, named by nobody: a guess helps here too
+                nameless.append((shown[-1], next(face for face in found if face["id"] == same[0])))
         loose, away = [], []
         for face in found:
             if face["id"] not in marked:
                 waved = any(_overlap(face["box"], there) >= SAME_FACE for there in ignored)
                 (away if waved else loose).append(face)
-        vectors = [numpy.frombuffer(face["vector"], dtype="float32") for face in loose if face["vector"]]
+        nameless = [(entry, face) for entry, face in nameless if face["vector"]
+                    and not any(_overlap(face["box"], there) >= SAME_FACE for there in ignored)]
+        asked = [face for face in loose if face["vector"]] + [face for _, face in nameless]
+        vectors = [numpy.frombuffer(face["vector"], dtype="float32") for face in asked]
         here = frozenset(region["name"] for region in photo["regions"] if region["name"] and is_face(region["type"]))
         proposals = iter(self._propose(self._everything(areas, stale=60), numpy.stack(vectors),
                                        taken=[here] * len(vectors)) if vectors else [])
+        guesses = {face["id"]: proposal[0] for face, proposal in zip(asked, proposals)}
+        proposals = iter([(guesses[face["id"]], 0.0) for face in loose if face["vector"]])
+        for entry, face in nameless:
+            entry["proposal"] = guesses[face["id"]]
         for face in loose:
             x, y, w, h = turn_box(face["box"], orientation)
             proposal = next(proposals)[0] if face["vector"] else ""

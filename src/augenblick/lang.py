@@ -59,25 +59,56 @@ def span(first: date, last: date, lang: str = "de") -> str:
 # the instruction on offer until an administrator writes own ones: (name, text)
 PHOTO_TASK = {
     "de": ("Beschreiben",
-           "Beschreibe das Foto in ein bis zwei sachlichen Sätzen auf Deutsch: was zu sehen ist und, wenn erkennbar, wo. "
-           "Nenne drei bis acht Schlagworte auf Deutsch (Hauptwörter in der Einzahl); nimm bevorzugt Schlagworte, die im "
-           "Archiv schon vorkommen. Erfinde keine Namen von Personen. Hat das Bild kein Aufnahmedatum, schätze, wann es "
-           "entstanden ist."),
+           "Schreibe eine Bildunterschrift auf Deutsch, wie man sie in ein Fotoalbum schreibt: ein kurzer Satz, höchstens "
+           "100 Zeichen, mit dem, was das Bild ausmacht – Anlass oder Tätigkeit und Ort. Stehen in den Angaben Namen der "
+           "Personen im Bild, nenne sie beim Namen. Beschreibe nie Alter, Aussehen oder Kleidung von Menschen und zähle "
+           "nicht auf, was ohnehin jeder sieht; ohne Namen genügt „zwei Personen“ oder „Familie“.\n"
+           "Nenne dazu fünf bis zehn Schlagworte auf Deutsch (Hauptwörter in der Einzahl), nach denen man das Bild später "
+           "suchen würde: die Umgebung (etwa Meer, Strand, Berg, Wald, See, Stadt, Garten, Wohnzimmer), das Motiv "
+           "(etwa Hund, Auto, Kirche, Essen), der Anlass (etwa Geburtstag, Hochzeit, Urlaub, Wanderung) und die Stimmung "
+           "des Lichts, wenn sie auffällt (etwa Sonnenuntergang, Schnee, Nacht). Nimm bevorzugt Schlagworte, die im Archiv "
+           "schon vorkommen; keine Namen von Personen und nichts Vages wie „Foto“ oder „Mensch“. "
+           "Hat das Bild kein Aufnahmedatum, schätze, wann es entstanden ist."),
     "en": ("Describe",
-           "Describe the photo in one or two plain sentences in English: what is to be seen and, if it can be told, where. "
-           "Give three to eight keywords in English (nouns in the singular); prefer keywords the archive already uses. "
-           "Do not make up names of people. If the picture has no date taken, estimate when it was made."),
+           "Write a caption in English as one would put it into a photo album: one short sentence, 100 characters at "
+           "most, saying what makes the picture – the occasion or activity and the place. If the facts name the people "
+           "in the picture, call them by their names. Never describe the age, looks or clothing of people, and do not "
+           "list what anyone can see; without names “two people” or “family” will do.\n"
+           "Add five to ten keywords in English (nouns in the singular) one would later search the picture by: the "
+           "surroundings (such as sea, beach, mountain, forest, lake, town, garden, living room), the subject (such as "
+           "dog, car, church, food), the occasion (such as birthday, wedding, holiday, hike) and the light if it stands "
+           "out (such as sunset, snow, night). Prefer keywords the archive already uses; no names of people and nothing "
+           "vague like “photo” or “person”. If the picture has no date taken, estimate when it was made."),
     "fr": ("Décrire",
-           "Décris la photo en une ou deux phrases sobres en français : ce que l’on voit et, si cela se reconnaît, où. "
-           "Donne trois à huit mots-clés en français (noms au singulier) ; préfère les mots-clés déjà utilisés dans "
-           "l’archive. N’invente aucun nom de personne. Si l’image n’a pas de date de prise de vue, estime quand elle "
-           "a été faite."),
+           "Écris une légende en français comme on la met dans un album photo : une phrase courte, 100 caractères au "
+           "plus, qui dit ce qui fait l’image – l’occasion ou l’activité et le lieu. Si les indications nomment les "
+           "personnes sur l’image, appelle-les par leur nom. Ne décris jamais l’âge, l’apparence ni les vêtements des "
+           "gens et n’énumère pas ce que chacun voit ; sans noms, « deux personnes » ou « famille » suffit.\n"
+           "Ajoute cinq à dix mots-clés en français (noms au singulier) par lesquels on chercherait l’image plus tard : "
+           "le cadre (par exemple mer, plage, montagne, forêt, lac, ville, jardin, salon), le sujet (par exemple chien, "
+           "voiture, église, repas), l’occasion (par exemple anniversaire, mariage, vacances, randonnée) et la lumière "
+           "si elle frappe (par exemple coucher de soleil, neige, nuit). Préfère les mots-clés déjà utilisés dans "
+           "l’archive ; pas de noms de personnes et rien de vague comme « photo » ou « personne ». Si l’image n’a pas "
+           "de date de prise de vue, estime quand elle a été faite."),
     "it": ("Descrivere",
-           "Descrivi la foto in una o due frasi sobrie in italiano: che cosa si vede e, se si riconosce, dove. "
-           "Indica da tre a otto parole chiave in italiano (sostantivi al singolare); preferisci le parole chiave già "
-           "usate nell’archivio. Non inventare nomi di persone. Se l’immagine non ha una data di scatto, stima quando "
-           "è stata fatta."),
+           "Scrivi una didascalia in italiano come la si mette in un album di foto: una frase breve, al massimo 100 "
+           "caratteri, che dica ciò che fa l’immagine – l’occasione o l’attività e il luogo. Se le indicazioni nominano "
+           "le persone nell’immagine, chiamale per nome. Non descrivere mai età, aspetto o vestiti delle persone e non "
+           "elencare ciò che chiunque vede; senza nomi basta «due persone» o «famiglia».\n"
+           "Aggiungi da cinque a dieci parole chiave in italiano (sostantivi al singolare) con cui si cercherebbe "
+           "l’immagine in seguito: l’ambiente (per esempio mare, spiaggia, montagna, bosco, lago, città, giardino, "
+           "soggiorno), il soggetto (per esempio cane, auto, chiesa, cibo), l’occasione (per esempio compleanno, "
+           "matrimonio, vacanza, escursione) e la luce se colpisce (per esempio tramonto, neve, notte). Preferisci le "
+           "parole chiave già usate nell’archivio; niente nomi di persone e nulla di vago come «foto» o «persona». "
+           "Se l’immagine non ha una data di scatto, stima quando è stata fatta."),
 }
+# what the built-in instruction said before 2026.11.69 – whoever still has it stored gets today's wording
+PHOTO_TASK_BEFORE = frozenset((
+    'Beschreibe das Foto in ein bis zwei sachlichen Sätzen auf Deutsch: was zu sehen ist und, wenn erkennbar, wo. Nenne drei bis acht Schlagworte auf Deutsch (Hauptwörter in der Einzahl); nimm bevorzugt Schlagworte, die im Archiv schon vorkommen. Erfinde keine Namen von Personen. Hat das Bild kein Aufnahmedatum, schätze, wann es entstanden ist.',
+    'Describe the photo in one or two plain sentences in English: what is to be seen and, if it can be told, where. Give three to eight keywords in English (nouns in the singular); prefer keywords the archive already uses. Do not make up names of people. If the picture has no date taken, estimate when it was made.',
+    'Décris la photo en une ou deux phrases sobres en français : ce que l’on voit et, si cela se reconnaît, où. Donne trois à huit mots-clés en français (noms au singulier) ; préfère les mots-clés déjà utilisés dans l’archive. N’invente aucun nom de personne. Si l’image n’a pas de date de prise de vue, estime quand elle a été faite.',
+    'Descrivi la foto in una o due frasi sobrie in italiano: che cosa si vede e, se si riconosce, dove. Indica da tre a otto parole chiave in italiano (sostantivi al singolare); preferisci le parole chiave già usate nell’archivio. Non inventare nomi di persone. Se l’immagine non ha una data di scatto, stima quando è stata fatta.',
+))
 
 # added to what the AI is told when the asker does not read German: the fixed parts of the request are German
 ANSWER_IN = {

@@ -25,7 +25,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from .lang import ANSWER_IN, PHOTO_TASK, known
+from .lang import ANSWER_IN, PHOTO_TASK, PHOTO_TASK_BEFORE, known
 
 # USD per million tokens (input, output) – Anthropic first-party list prices
 PRICES: dict[str, tuple[float, float]] = {
@@ -279,9 +279,12 @@ class AIService:
         return area not in self.load().excluded_areas
 
     def complete(self, system: str, prompt: str, max_tokens: int = 2000, effort: str = "low",
-                 force: bool = False, images: list[bytes] | None = None) -> Completion:
-        """One question, one answer. ``images`` are JPEG files the model gets to see before the text."""
+                 force: bool = False, images: list[bytes] | None = None, model: str = "") -> Completion:
+        """One question, one answer. ``images`` are JPEG files the model gets to see before the text;
+        ``model`` asks another model than the one in the settings, for this one call."""
         config = self.load()
+        if model:
+            config.model = model
         if not config.enabled and not force:
             raise AIError("AI is disabled")
         spent = config.usage.get(this_month(), {}).get("cost", 0.0)
@@ -401,9 +404,11 @@ _DATE = re.compile(r"^(\d{4})(?:-(\d\d))?(?:-(\d\d))?$")
 def prompts_of(config: AIConfig, lang: str = "de") -> tuple[list[dict], str]:
     """The instructions on offer and the preselected one; without own ones the built-in,
     in the language of whoever asks."""
-    if config.prompts:
-        return config.prompts, config.default_prompt or config.prompts[0]["name"]
     name, text = PHOTO_TASK[known(lang)]
+    if config.prompts:
+        # a stored copy of the old built-in wording is nobody's own text: it follows the built-in one
+        offered = [{**p, "text": text} if p["text"].strip() in PHOTO_TASK_BEFORE else p for p in config.prompts]
+        return offered, config.default_prompt or offered[0]["name"]
     return [{"name": name, "text": text}], name
 
 
@@ -421,6 +426,9 @@ def photo_prompt(photo: dict, task: str, known_keywords: list[str]) -> str:
         named = ", ".join(part for part in (photo.get("city"), photo.get("state"), photo.get("country")) if part)
         if named:
             facts.append(f"Nächster Ort laut Koordinaten: {named}")
+    people = [name for name in (photo.get("people") or []) if name]
+    if people:
+        facts.append("Personen im Bild (von Menschen benannt, verlässlich): " + ", ".join(people))
     if photo.get("description"):
         facts.append(f"Bisherige Beschreibung: {photo['description']}")
     if photo.get("keywords"):

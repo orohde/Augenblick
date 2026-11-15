@@ -15,8 +15,8 @@ Die meisten Fotoserver nehmen deine Bilder in eine eigene Ablage und merken sich
 
 ## Funktionen
 
-- **Zeitleiste, Ordnerbaum, Karte und Einzelansicht** – Bilder in ihrer eigenen Form, Filter nach Kamera, Ort, Bereich; Suche über Name, Ordner, Beschreibung, Schlagworte und Ort.
-- **Datum, Ort, Beschreibung, Schlagworte, Bewertung ändern** – für ein Bild oder für Hunderte auf einmal (die Uhr der Kamera ging zwei Stunden falsch? alle verschieben). Den Ort wählst du auf der Karte.
+- **Zeitleiste, Ordnerbaum, Karte und Einzelansicht** – Bilder in ihrer eigenen Form, Filter nach Kamera, Ort, Bereich; Suche über Name, Ordner, Beschreibung, Schlagworte, Ort und Fotograf.
+- **Datum, Ort, Beschreibung, Schlagworte, Fotograf, Bewertung ändern** – für ein Bild oder für Hunderte auf einmal (die Uhr der Kamera ging zwei Stunden falsch? alle verschieben). Den Ort wählst du auf der Karte.
 - **Alles lässt sich zurücknehmen.** Jede Änderung wird geprüft, bevor sie das Foto ersetzt, das Journal kennt die alten Werte, Löschen heißt Papierkorb.
 - **Verlustfreies Drehen** von JPEG (jpegtran) und HEIC; markierte Gesichter drehen mit.
 - **Bilder bearbeiten:** zuschneiden, gerade rücken, Licht und Farben – als neues Bild neben dem Original, das dahinter unangetastet bleibt.
@@ -24,11 +24,11 @@ Die meisten Fotoserver nehmen deine Bilder in eine eigene Ablage und merken sich
 - **Personen.** Gesichter werden auf dem eigenen Rechner gefunden und gruppiert (keine Cloud, keine Grafikkarte); Namen stehen als übliche XMP-Regionen im Bild.
 - **Duplikate**, auch dasselbe Bild in anderer Größe; was nur die Kopie weiß, wird vorher übernommen.
 - **Ordnen nach Regeln**, wenn du magst: ein Ordner je Jahr, Dateiname aus dem Datum – mit Vorschau, nie ohne deine Ansage.
-- **Upload vom Telefon** über WebDAV (PhotoSync und andere) in einen Eingang, mit einem Schlüssel je Telefon, der nichts kann außer abliefern.
+- **Upload vom Telefon** über WebDAV (PhotoSync und andere) in einen Eingang, mit einem Schlüssel je Telefon, der nichts kann außer abliefern. Ein Schlüssel kann den Namen des Fotografen in die Bilder schreiben, und Bilder behalten das Datum, das das Telefon für sie kannte.
 - **Eingang abarbeiten:** Die KI schlägt für Neues Beschreibung und Schlagworte vor (auf Knopfdruck oder von selbst), Gesichter werden schon dort erkannt. Du streichst, was nicht passt, und sortierst mit einem Klick ein – danach kommt das nächste Bild.
 - **Filme und Live Photos**, HEIC, ProRAW (DNG, nur lesend).
 - **Bereiche und Rechte je Person**, zweiter Faktor, Heimnetz-Regeln, Meldungen über ntfy, REST-API (`/api/docs`).
-- **KI, wenn du willst** (Claude, Ollama oder ein anderer OpenAI-kompatibler Dienst): schlägt Beschreibung und Schlagworte vor, benennt eine Erinnerung – sie schreibt nie selbst.
+- **KI, wenn du willst** (Claude, Ollama oder ein anderer OpenAI-kompatibler Dienst): schlägt Beschreibung und Schlagworte vor, benennt eine Erinnerung. Sie schreibt nie von selbst – mit einer Ausnahme, die du selbst startest: den Bestand beschreiben lassen, also jedes Bild ohne Schlagworte, damit die Suche Bilder nach ihrem Inhalt findet („Meer“, „Hochzeit“). Jede dieser Änderungen lässt sich zurücknehmen.
 - **Vier Sprachen:** Deutsch, Englisch, Französisch, Italienisch – je Konto wählbar.
 
 <table>

@@ -1,11 +1,14 @@
 """The door for the phone: uploads over WebDAV land in one area, and the key opens nothing else."""
 import base64
 import dataclasses
+import shutil
+import subprocess
 
 import pytest
 
 from augenblick.app import create_app
 from augenblick import upload
+from augenblick.media import jpeg_image_hash
 from conftest import PASSWORD, browser, make_jpeg
 
 
@@ -179,4 +182,94 @@ def test_the_one_key_from_before_goes_on_working(settings):
     assert phone.request("PROPFIND", "/dav/").status_code == 207
     admin = browser(app)
     assert admin.post("/api/setup", json={"username": "oliver", "password": PASSWORD}).status_code == 201
-    assert admin.get("/api/upload").json()["keys"] == [{"id": "erster", "name": "", "area": "", "made": 5.0, "last": 6.0, "count": 86}]
+    assert admin.get("/api/upload").json()["keys"] == [
+        {"id": "erster", "name": "", "area": "", "creator": "", "made": 5.0, "last": 6.0, "count": 86}]
+
+
+@pytest.mark.skipif(not shutil.which("exiftool"), reason="needs exiftool")
+def test_a_key_says_who_took_the_pictures(door, tmp_path):
+    """The name on the key goes into each picture as it arrives – so it is still known whose it was
+    once the picture has moved on to another area."""
+    admin, data = door.admin, picture(tmp_path)
+    made = admin.post("/api/upload/keys", json={"name": "Gretas iPhone", "creator": "  Greta  "}).json()
+    hers = next(k for k in made["keys"] if k["id"] == made["key_id"])
+    assert hers["creator"] == "Greta" and admin.get("/api/upload").json()["keys"][0]["creator"] == ""
+    greta = browser(door.app)
+    greta.headers["Authorization"] = "Bearer " + made["key"]
+
+    assert greta.put("/dav/IMG_1.jpg", content=data).status_code == 201
+    landed = door.photos / "Eingang/IMG_1.jpg"
+    assert landed.read_bytes() != data and jpeg_image_hash(landed.read_bytes()) == jpeg_image_hash(data)
+    assert not list(landed.parent.glob(".augenblick-*"))
+    # the phone sends its own file again: it is the same picture, nothing is added
+    assert greta.put("/dav/IMG_1.jpg", content=data).status_code == 204
+    assert [p.name for p in landed.parent.iterdir() if p.is_file()] == ["IMG_1.jpg"]
+    # a key without a name leaves the file as it came
+    assert door.put("/dav/IMG_2.jpg", content=picture(tmp_path, (9, 9, 9))).status_code == 201
+    assert (door.photos / "Eingang/IMG_2.jpg").read_bytes() == picture(tmp_path, (9, 9, 9))
+    # a picture that says who took it keeps its name
+    signed = make_jpeg(tmp_path / "fremd.jpg", color=(1, 2, 3))
+    subprocess.run(["exiftool", "-q", "-overwrite_original", "-IFD0:Artist=Jemand anders", str(signed)], check=True)
+    assert greta.put("/dav/IMG_3.jpg", content=signed.read_bytes()).status_code == 201
+    assert (door.photos / "Eingang/IMG_3.jpg").read_bytes() == signed.read_bytes()
+
+    door.app.state.index.scan()
+    assert sorted((c["creator"], c["count"]) for c in admin.get("/api/creators?areas=Eingang").json()) == [
+        ("Greta", 1), ("Jemand anders", 1)]
+    # the name on the key can change later; what was written stays
+    assert admin.patch(f"/api/upload/keys/{hers['id']}", json={"creator": ""}).status_code == 200
+    assert greta.put("/dav/IMG_4.jpg", content=picture(tmp_path, (7, 7, 7))).status_code == 201
+    assert (door.photos / "Eingang/IMG_4.jpg").read_bytes() == picture(tmp_path, (7, 7, 7))
+
+
+@pytest.mark.skipif(not shutil.which("exiftool"), reason="needs exiftool")
+def test_the_phone_says_when_a_picture_was_made(door, tmp_path):
+    """Pictures that came over a messenger carry no date of their own; the phone knows when it got them.
+    It can say so with the upload (a header) or right after it (PROPPATCH) – the date goes into the picture."""
+    import os
+    from datetime import datetime
+    from augenblick.media import read_image
+    bare = make_jpeg(tmp_path / "bare.jpg", color=(3, 4, 5)).read_bytes()
+    dated = picture(tmp_path)                                           # says 2026-11-12 10:15 itself
+    made = datetime(2024, 3, 9, 17, 30, 5).timestamp()
+
+    sent = door.put("/dav/IMG_1.jpg", content=bare, headers={"X-OC-Mtime": str(int(made))})
+    assert sent.status_code == 201 and sent.headers["x-oc-mtime"] == "accepted"
+    landed = door.photos / "Eingang/IMG_1.jpg"
+    assert read_image(landed.read_bytes())[1]["taken"] == "2024-03-09T17:30:05" and abs(os.stat(landed).st_mtime - made) < 2
+    assert jpeg_image_hash(landed.read_bytes()) == jpeg_image_hash(bare)
+    # a picture that knows its date keeps it; only the file's date follows the phone
+    assert door.put("/dav/IMG_2.jpg", content=dated, headers={"X-OC-Mtime": str(int(made))}).status_code == 201
+    assert read_image((door.photos / "Eingang/IMG_2.jpg").read_bytes())[1]["taken"] == "2026-11-12T10:15:00"
+    # nonsense, the future and "just now" are no dates
+    for value in ("gestern", "0", str(int(datetime(2099, 1, 1).timestamp())), str(int(datetime.now().timestamp()))):
+        other = make_jpeg(tmp_path / "x.jpg", color=(len(value), 9, 9)).read_bytes()
+        assert "x-oc-mtime" not in door.put(f"/dav/n{len(value)}.jpg", content=other, headers={"X-OC-Mtime": value}).headers
+        assert (door.photos / f"Eingang/n{len(value)}.jpg").read_bytes() == other
+
+    # afterwards, the way WebDAV clients do it where the server knows no such header
+    assert door.put("/dav/IMG_3.jpg", content=make_jpeg(tmp_path / "y.jpg", color=(8, 8, 1)).read_bytes()).status_code == 201
+    body = ('<?xml version="1.0"?><D:propertyupdate xmlns:D="DAV:"><D:set><D:prop>'
+            '<lastmodified xmlns="DAV:">Sat, 09 Mar 2024 16:30:05 GMT</lastmodified></D:prop></D:set></D:propertyupdate>')
+    patched = door.request("PROPPATCH", "/dav/IMG_3.jpg", content=body)
+    assert patched.status_code == 207 and "200 OK" in patched.text
+    assert read_image((door.photos / "Eingang/IMG_3.jpg").read_bytes())[1]["taken"] == "2024-03-09T17:30:05"
+    assert "403" in door.request("PROPPATCH", "/dav/IMG_3.jpg", content=body.replace("lastmodified", "displayname")).text
+    assert door.request("PROPPATCH", "/dav/fehlt.jpg", content=body).status_code == 404
+    # sent once more with its date, a picture that came without one gets it
+    assert door.put("/dav/IMG_4.jpg", content=bare.replace(b"\xff\xd9", b"\xff\xd9", 1)).status_code == 201
+    assert door.put("/dav/IMG_4.jpg", content=bare, headers={"X-OC-Mtime": str(int(made))}).status_code == 204
+    assert read_image((door.photos / "Eingang/IMG_4.jpg").read_bytes())[1]["taken"] == "2024-03-09T17:30:05"
+
+    door.app.state.index.scan()
+    taken = {name: (p["taken"], p["taken_src"]) for name in ("IMG_1.jpg", "IMG_3.jpg", "IMG_4.jpg")
+             for p in [door.app.state.index.by_path("Eingang/" + name)]}
+    assert taken["IMG_1.jpg"] == taken["IMG_3.jpg"] == taken["IMG_4.jpg"] == ("2024-03-09T17:30:05", "exif")
+
+
+def test_old_films_come_in_too(door):
+    assert door.put("/dav/2025-07-13_16-55-07_film.mpg", content=b"\x00\x00\x01\xba kein echter Film").status_code == 201
+    assert door.put("/dav/notizen.txt", content=b"nein").status_code == 415
+    door.app.state.index.scan()
+    film = door.app.state.index.by_path("Eingang/2025-07-13_16-55-07_film.mpg")
+    assert film["kind"] == "video" and film["taken"] == "2025-07-13T16:55:07" and film["taken_src"] == "name"

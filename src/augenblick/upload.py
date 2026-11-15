@@ -12,11 +12,14 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
+import re
 import secrets
 import threading
 import time
-from email.utils import formatdate
+from datetime import datetime
+from email.utils import formatdate, parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import quote, unquote
 from xml.sax.saxutils import escape
@@ -25,14 +28,40 @@ import anyio
 from fastapi import Request
 from fastapi.responses import Response
 
-from .media import file_hash, kind_of
+from .media import clean_creator, file_hash, image_hash, kind_of
+
+log = logging.getLogger("augenblick.upload")
 
 METHODS = ["OPTIONS", "PROPFIND", "MKCOL", "PUT", "HEAD", "GET", "DELETE", "MOVE", "COPY", "PROPPATCH", "LOCK", "UNLOCK"]
-ALLOWED = "OPTIONS, PROPFIND, MKCOL, PUT, HEAD"
+ALLOWED = "OPTIONS, PROPFIND, MKCOL, PUT, HEAD, PROPPATCH"
 TRIES = 10              # wrong keys from one address …
 PAUSE = 600             # … before it has to wait this many seconds
 SETTLE = 20             # seconds after the last upload before the new files are read in
 PART = ".augenblick-upload-"
+# WebDAV itself has no way to say when a file was made. Clients help themselves: a header on the upload
+# (ownCloud's X-OC-Mtime) or a PROPPATCH afterwards that sets one of these properties.
+DATE_PROPS = ("getlastmodified", "lastmodified", "win32lastmodifiedtime", "modificationtime", "mtime",
+              "creationdate", "win32creationtime")
+_PROP = re.compile(rb"<(?:[\w.-]+:)?([\w.-]+)[^<>]*>\s*([^<>]{1,80}?)\s*</", re.S)
+
+
+def when(text) -> float | None:
+    """A point in time as a client may give it – seconds or milliseconds since 1970, a date as HTTP
+    writes it, or an ISO date – as seconds since 1970. None for what is no date, lies in the future,
+    or is so close to now that it only says when the upload happened."""
+    text = str(text or "").strip()
+    try:
+        value = float(text)
+        value = value / 1000 if value > 1e11 else value
+    except ValueError:
+        try:
+            value = parsedate_to_datetime(text).timestamp()
+        except (TypeError, ValueError):
+            try:
+                value = datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                return None
+    return value if 315532800 < value < time.time() - 120 else None      # after 1980, before two minutes ago
 
 
 class Inbox:
@@ -49,10 +78,10 @@ class Inbox:
             stored = {}
         keys = [{"id": str(k.get("id") or ""), "name": str(k.get("name") or ""), "area": str(k.get("area") or ""),
                  "hash": str(k.get("hash") or ""), "made": float(k.get("made") or 0), "last": float(k.get("last") or 0),
-                 "count": int(k.get("count") or 0)}
+                 "count": int(k.get("count") or 0), "creator": str(k.get("creator") or "")}
                 for k in stored.get("keys") or [] if isinstance(k, dict) and k.get("id") and k.get("hash")]
         if stored.get("hash") and not keys:         # from the time of the one key: it goes on working
-            keys = [{"id": "erster", "name": "", "area": "", "hash": str(stored["hash"]),
+            keys = [{"id": "erster", "name": "", "area": "", "creator": "", "hash": str(stored["hash"]),
                      "made": float(stored.get("made") or 0), "last": float(stored.get("last") or 0),
                      "count": int(stored.get("count") or 0)}]
         return {"area": str(stored.get("area") or ""), "keys": keys}
@@ -68,10 +97,11 @@ class Inbox:
         temp.replace(self.path)
         return state
 
-    def new_key(self, name: str = "", area: str = "", key_id: str = "") -> tuple[str, str]:
+    def new_key(self, name: str = "", area: str = "", key_id: str = "", creator: str = "") -> tuple[str, str]:
         """A new key, or a new one in place of the one named by `key_id` – that one stops working at
         once. Each key has a name (whose phone) and may lead into an area of its own instead of the
-        usual one. It is shown this once and never again. Hands back (id, key)."""
+        usual one, and may say who takes the pictures that come through it – that name is written into
+        each picture as it arrives. It is shown this once and never again. Hands back (id, key)."""
         key = secrets.token_urlsafe(32)
         digest = hashlib.sha256(key.encode()).hexdigest()
         with self._lock:
@@ -83,7 +113,7 @@ class Inbox:
                 found.update(hash=digest, made=time.time())
             else:
                 found = {"id": secrets.token_hex(4), "name": " ".join(name.split())[:40], "area": area, "hash": digest,
-                         "made": time.time(), "last": 0.0, "count": 0}
+                         "made": time.time(), "last": 0.0, "count": 0, "creator": clean_creator(creator)}
                 state["keys"].append(found)
             self._write(state)
             return found["id"], key
@@ -95,7 +125,8 @@ class Inbox:
             state["keys"] = [k for k in state["keys"] if key_id is not None and k["id"] != key_id]
             self._write(state)
 
-    def change_key(self, key_id: str, name: str | None = None, area: str | None = None) -> None:
+    def change_key(self, key_id: str, name: str | None = None, area: str | None = None,
+                   creator: str | None = None) -> None:
         with self._lock:
             state = self.load()
             found = next((k for k in state["keys"] if k["id"] == key_id), None)
@@ -105,6 +136,8 @@ class Inbox:
                 found["name"] = " ".join(name.split())[:40]
             if area is not None:
                 found["area"] = area
+            if creator is not None:
+                found["creator"] = clean_creator(creator)
             self._write(state)
 
     def opens(self, key: str) -> dict | None:
@@ -134,7 +167,7 @@ class Inbox:
 
     def public(self) -> dict:
         state = self.load()
-        keys = [{k: entry[k] for k in ("id", "name", "area", "made", "last", "count")} for entry in state["keys"]]
+        keys = [{k: entry[k] for k in ("id", "name", "area", "creator", "made", "last", "count")} for entry in state["keys"]]
         return {"area": state["area"], "keys": keys, "has_key": bool(keys),
                 "made": max((k["made"] for k in keys), default=0), "last": max((k["last"] for k in keys), default=0),
                 "count": sum(k["count"] for k in keys)}
@@ -175,8 +208,9 @@ def _entry(href: str, path: Path) -> str:
             "</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>")
 
 
-def mount(app, inbox: Inbox, root: Path, readonly: bool, client_ip, wake: threading.Event, base: str = "/dav") -> None:
-    """Hang the door into the app."""
+def mount(app, inbox: Inbox, root: Path, readonly: bool, client_ip, wake: threading.Event, base: str = "/dav",
+          sign=None) -> None:
+    """Hang the door into the app. `sign(path, name)` writes who took a picture into the file."""
     misses: dict[str, list[float]] = {}
     settle: list[threading.Timer] = []
     guard = threading.Lock()
@@ -213,20 +247,47 @@ def mount(app, inbox: Inbox, root: Path, readonly: bool, client_ip, wake: thread
             settle[0].daemon = True
             settle[0].start()
 
-    def put(target: Path, temp: Path) -> tuple[int, Path]:
+    def same(target: Path, temp: Path) -> bool:
+        """The same file – or the same picture with other words around it: once a name is written
+        into what arrives, the file here no longer equals the one on the phone byte for byte."""
+        if target.stat().st_size == temp.stat().st_size and file_hash(target) == file_hash(temp):
+            return True
+        ext = target.suffix.lower().lstrip(".")
+        if kind_of(ext) != "image" or target.stat().st_size > 400 << 20:
+            return False
+        return image_hash(target.read_bytes(), ext) == image_hash(temp.read_bytes(), ext)
+
+    def put(target: Path, temp: Path, creator: str = "", made: float | None = None) -> tuple[int, Path]:
         """Put the finished upload in place. The same file again changes nothing; another file of
         the same name gets a number – nothing is ever overwritten."""
         if target.exists():
-            if target.is_file() and target.stat().st_size == temp.stat().st_size and file_hash(target) == file_hash(temp):
+            if target.is_file() and same(target, temp):
                 temp.unlink()
+                if made and abs(target.stat().st_mtime - made) > 2:     # sent again, this time with its date
+                    settle_file(target, "", made, target.name)
+                    read_in_soon()
                 return 204, target
             number = 2
             while (free := target.with_name(f"{target.stem}-{number}{target.suffix}")).exists():
                 number += 1
             target = free
+        settle_file(temp, creator, made, target.name)
         os.chmod(temp, 0o664)
         os.rename(temp, target)
         return 201, target
+
+    def settle_file(path: Path, creator: str, made: float | None, name: str) -> None:
+        """Give a file that came through the door what the door knows about it: who took it, and when –
+        written into the picture where it says neither itself, and as the file's own date, which is
+        all a film can take."""
+        if sign and (creator or made):
+            taken = datetime.fromtimestamp(made).strftime("%Y-%m-%dT%H:%M:%S") if made else ""
+            try:                                # a picture that cannot take them still comes in as it is
+                sign(path, creator, taken)
+            except Exception as exc:
+                log.warning("could not write name or date into %s: %s", name, exc)
+        if made:
+            os.utime(path, (made, made))
 
     async def door(request: Request) -> Response:
         method = request.method
@@ -282,7 +343,7 @@ def mount(app, inbox: Inbox, root: Path, readonly: bool, client_ip, wake: thread
                 return Response(status_code=409)
             if "content-range" in request.headers:      # a file in pieces: taking one piece for the file would ruin it
                 return Response(status_code=400, content="uploads in pieces are not supported: send the file in one go")
-            temp = path.with_name(PART + secrets.token_hex(6))
+            temp = path.with_name(PART + secrets.token_hex(6) + path.suffix)
             try:
                 async with await anyio.open_file(temp, "wb") as out:
                     async for chunk in request.stream():
@@ -290,7 +351,10 @@ def mount(app, inbox: Inbox, root: Path, readonly: bool, client_ip, wake: thread
                 wanted = request.headers.get("content-length")
                 if wanted and wanted.isdigit() and int(wanted) != temp.stat().st_size:
                     raise OSError("the upload broke off")
-                status, landed = await anyio.to_thread.run_sync(put, path, temp)
+                made = when(request.headers.get("x-oc-mtime")) or when(request.headers.get("x-oc-ctime"))
+                status, landed = await anyio.to_thread.run_sync(put, path, temp, request.state.upload_key.get("creator", ""), made)
+                if made:
+                    log.info("%s came with its date (header)", landed.name)
             except BaseException:               # also when the phone hangs up half way: leave no half file
                 temp.unlink(missing_ok=True)
                 raise
@@ -298,10 +362,33 @@ def mount(app, inbox: Inbox, root: Path, readonly: bool, client_ip, wake: thread
             if status == 201:
                 read_in_soon()
             headers = {"Location": (href.rsplit("/", 1)[0] + "/" + quote(landed.name))} if landed != path else {}
+            if made:
+                headers["X-OC-Mtime"] = "accepted"
             return Response(status_code=status, headers=headers)
 
+        if method == "PROPPATCH":
+            # the one thing that may be changed about a file here: the date it was made, which the
+            # upload itself cannot carry
+            if readonly:
+                return Response(status_code=403, content="read-only")
+            if not parts or not path.is_file():
+                return Response(status_code=404)
+            body = await request.body() if int(request.headers.get("content-length") or 0) <= 65536 else b""
+            given = [(name.decode("ascii", "replace"), value.decode("utf-8", "replace")) for name, value in _PROP.findall(body)]
+            dates = sorted(((DATE_PROPS.index(name.lower()), when(value)) for name, value in given
+                            if name.lower() in DATE_PROPS and when(value)))
+            if dates:
+                await anyio.to_thread.run_sync(settle_file, path, "", dates[0][1], path.name)
+                read_in_soon()
+                log.info("%s got its date afterwards (PROPPATCH)", path.name)
+            status = "200 OK" if dates else "403 Forbidden"
+            answer = ('<?xml version="1.0" encoding="utf-8"?><D:multistatus xmlns:D="DAV:"><D:response>'
+                      f"<D:href>{escape(href)}</D:href><D:propstat><D:prop/><D:status>HTTP/1.1 {status}</D:status>"
+                      "</D:propstat></D:response></D:multistatus>")
+            return Response(status_code=207, content=answer, media_type="application/xml; charset=utf-8")
+
         # reading a photo back, changing or deleting one: not through this door
-        return Response(status_code=403 if method in ("GET", "DELETE", "MOVE", "COPY", "PROPPATCH") else 405,
+        return Response(status_code=403 if method in ("GET", "DELETE", "MOVE", "COPY") else 405,
                         headers={"Allow": ALLOWED})
 
     app.add_route(base, door, methods=METHODS, include_in_schema=False)

@@ -24,8 +24,8 @@ from PIL import Image, ImageChops, ImageOps, ImageStat
 
 from .index import Index
 from .journal import Journal
-from .media import (ALBUM_ROOT, HEIF_EXT, clean_name, file_hash, heif_image_hash, heif_turn, is_face, jpeg_image_hash,
-                    RAW_EXT, SOURCE_MARK, Frame, clean_recipe, develop, jpeg_trailer, people_of, read_image,
+from .media import (ALBUM_ROOT, HEIF_EXT, HEIF_ORIENTATION, clean_creator, clean_name, file_hash, heif_image_hash, heif_turn, is_face, jpeg_image_hash,
+                    RAW_EXT, SOURCE_MARK, Frame, clean_recipe, develop, jpeg_trailer, kind_of, people_of, read_image,
                     turn_box)
 
 log = logging.getLogger("augenblick.edit")
@@ -44,9 +44,11 @@ TEXT_EXTRA = ("IPTC:Caption-Abstract",)
 WORD_TAGS = ("XMP-dc:Subject",)
 WORD_EXTRA = ("IPTC:Keywords",)
 RATING_TAGS = ("XMP-xmp:Rating",)
+CREATOR_TAGS = ("IFD0:Artist", "XMP-dc:Creator")      # who took the picture
+CREATOR_EXTRA = ("IPTC:By-line",)
 TREE_TAG = "XMP-lr:HierarchicalSubject"     # albums live here, as Album|Urlaub|USA 2010
 META_TAGS = (DATE_TAGS + DATE_EXTRA + PLACE_TAGS + PLACE_EXTRA + TEXT_TAGS + TEXT_EXTRA + WORD_TAGS + WORD_EXTRA
-             + RATING_TAGS + (TREE_TAG,))
+             + RATING_TAGS + CREATOR_TAGS + CREATOR_EXTRA + (TREE_TAG,))
 LIST_TAGS = WORD_TAGS + WORD_EXTRA + (TREE_TAG,)
 REGION_TAG = "XMP-mwg-rs:RegionInfo"         # marked faces with their names, relative to the stored picture
 TURN_TAGS = ("IFD0:Orientation", "IFD1:Orientation", "XMP-tiff:Orientation", "ExifIFD:ExifImageWidth",
@@ -61,9 +63,6 @@ JPEGTRAN_OPS = {2: ["-flip", "horizontal"], 3: ["-rotate", "180"], 4: ["-flip", 
                 6: ["-rotate", "90"], 7: ["-transverse"], 8: ["-rotate", "270"]}
 INVERSE = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 8, 7: 7, 8: 6}
 TURNS = {90: 6, 180: 3, 270: 8}      # degrees clockwise -> the orientation that means the same
-# A HEIF file says how to turn its picture in a field of its own, as quarter turns anti-clockwise.
-# The phone repeats that in the Exif orientation; readers go by the field, so the two are kept alike.
-HEIF_ORIENTATION = {0: 1, 1: 8, 2: 3, 3: 6}
 
 
 def _apply(image: Image.Image, n: int) -> Image.Image:
@@ -228,8 +227,9 @@ class Editor:
     # ------------------------------------------------------------ plumbing
 
     def _tell(self, old: str, new: str, n: int, path: str) -> None:
-        """The picture is turned and safe; what hangs on its old hash elsewhere should follow.
-        If that fails the turn still stands."""
+        """The picture is turned and safe – or it is the same picture under another hash, because words
+        were written into a file whose hash covers all of it (n = 1). What hangs on its old hash
+        elsewhere should follow. If that fails the change still stands."""
         if self.on_turn and old != new:
             try:
                 self.on_turn(old, new, n, path)
@@ -392,6 +392,8 @@ class Editor:
             want["albums"] = albums
         if change.get("rating") is not None and change["rating"] != (photo["rating"] or 0):
             want["rating"] = int(change["rating"])
+        if change.get("creator") is not None and clean_creator(change["creator"]) != (photo.get("creator") or ""):
+            want["creator"] = clean_creator(change["creator"])
         return want
 
     @staticmethod
@@ -432,6 +434,8 @@ class Editor:
             put(WORD_TAGS, WORD_EXTRA, dict.fromkeys(WORD_TAGS + WORD_EXTRA, want["keywords"] or None))
         if "rating" in want:
             tags["XMP-xmp:Rating"] = want["rating"] or None
+        if "creator" in want:
+            put(CREATOR_TAGS, CREATOR_EXTRA, dict.fromkeys(CREATOR_TAGS + CREATOR_EXTRA, want["creator"] or None))
         if "albums" in want:        # other keyword trees in the same tag are none of our business: they stay
             others = [str(v) for v in present.get(TREE_TAG, []) if str(v).split("|")[0] != ALBUM_ROOT]
             tags[TREE_TAG] = others + [ALBUM_ROOT + "|" + album.replace("/", "|") for album in want["albums"]] or None
@@ -461,11 +465,13 @@ class Editor:
             problems.append("rating")
         if "albums" in want and meta.get("albums", []) != want["albums"]:
             problems.append("albums")
+        if "creator" in want and (meta.get("creator") or "") != want["creator"]:
+            problems.append("creator")
         if problems:
             raise EditError("check failed: not stored as asked (" + ", ".join(problems) + ")")
 
     def change(self, photo: dict, change: dict, user: str, batch: str | None = None) -> dict:
-        """Write date, place, description, keywords or rating into the photo."""
+        """Write date, place, description, keywords, rating or who took it into the photo."""
         if photo["kind"] != "image":
             raise EditError("only pictures can be changed so far")
         if photo["ext"] in RAW_EXT:
@@ -487,6 +493,7 @@ class Editor:
             finally:
                 temp.unlink(missing_ok=True)
             record = self.index.refresh(photo["path"])
+            self._tell(photo["hash"], record["hash"], 1, photo["path"])     # where the hash covers the whole file
             before = {k: photo.get(k) or [] if k == "albums" else photo[k] for k in want}
             if "taken" in want:
                 before["taken_src"] = photo["taken_src"]
@@ -494,6 +501,41 @@ class Editor:
                              before=before, after=want, tags={t: present.get(t) for t in tags},
                              sha_after=file_hash(src))
             return record
+
+    def sign(self, path: Path, creator: str = "", taken: str = "") -> list[str]:
+        """Write into a file that is not part of the collection yet – one that has just come through
+        the upload door – what the door knows about it and the file does not say itself: who took
+        it (the name on the key) and when (the date the phone gave, as YYYY-MM-DDTHH:MM:SS). What the
+        file says already stays. The picture data must come out untouched, else the file is left as
+        it came. Hands back what was written: "creator", "taken"."""
+        creator = clean_creator(creator)
+        ext = path.suffix.lower().lstrip(".")
+        if not (creator or taken) or kind_of(ext) != "image" or ext in RAW_EXT:
+            return []
+        present = self._read(path, CREATOR_TAGS + CREATOR_EXTRA + DATE_TAGS + DATE_EXTRA)
+        tags: dict = {}
+        if creator and all(_nothing(present.get(tag)) for tag in CREATOR_TAGS + CREATOR_EXTRA):
+            tags.update(dict.fromkeys(CREATOR_TAGS, creator))
+        dated = taken and all(_nothing(present.get(tag)) for tag in DATE_TAGS + DATE_EXTRA) \
+            and not read_image(path.read_bytes())[1].get("taken")
+        if dated:
+            tags.update(dict.fromkeys(DATE_TAGS, taken.replace("-", ":").replace("T", " ")))
+        if not tags:
+            return []
+        temp = self._beside(path)
+        try:
+            self._write(path, temp, tags)
+            self._same_picture(path, temp)
+            self._check_tags(temp, tags)
+            meta = read_image(temp.read_bytes())[1]
+            if "IFD0:Artist" in tags and (meta.get("creator") or "") != creator:
+                raise EditError("check failed: not stored as asked (creator)")
+            if dated and meta.get("taken") != taken:
+                raise EditError("check failed: not stored as asked (date)")
+            self._commit(temp, path)
+        finally:
+            temp.unlink(missing_ok=True)
+        return (["creator"] if "IFD0:Artist" in tags else []) + (["taken"] if dated else [])
 
     # ------------------------------------------------------------ turning
 
@@ -709,7 +751,8 @@ class Editor:
 
     def _rotate_heif(self, photo: dict, degrees: int, user: str, batch: str | None = None) -> dict:
         """Turn a HEIF picture (the phone's HEIC) by its turn field: one byte, the picture data stays
-        as it is. What is shown is another picture afterwards, so marked faces turn with it."""
+        as it is. Marked faces are written relative to that data, so they stay as they are and are
+        simply read the other way round afterwards."""
         with self._lock:
             src = self._source(photo["path"])
             found = heif_turn(src.read_bytes())
@@ -722,8 +765,7 @@ class Editor:
             tags: dict = {}
             if "IFD0:Orientation" in present:
                 tags["IFD0:Orientation"] = HEIF_ORIENTATION[now]
-            if present.get(REGION_TAG):
-                tags[REGION_TAG] = turn_regions(present[REGION_TAG], n)
+            # marked faces lie in the stored picture, which stays as it is: they need no turning
             turned = self._heif_turned(src, now, n)
             final = self._beside(src)
             try:
@@ -765,8 +807,9 @@ class Editor:
             present = self._read(src, (REGION_TAG, "IFD0:Orientation"))
             now = present.get("IFD0:Orientation")
             now = now if isinstance(now, int) and 1 <= now <= 8 else 1
-            if photo["ext"] in HEIF_EXT:        # shown as stored: the decoder has done the turning
-                now = 1
+            if photo["ext"] in HEIF_EXT:        # the decoder has done the turning: what is shown lies
+                turn = heif_turn(src.read_bytes(), alone=False)     # as the turn field says, not the Exif tag
+                now = HEIF_ORIENTATION[turn[1]] if turn else 1
             old = present.get(REGION_TAG) if isinstance(present.get(REGION_TAG), dict) else None
             info = copy.deepcopy(old) or {}
             regions = info.get("RegionList") or []
@@ -802,8 +845,10 @@ class Editor:
             if regions:
                 info["RegionList"] = regions
                 if "AppliedToDimensions" not in info:
-                    with Image.open(src) as image:
-                        info["AppliedToDimensions"] = {"W": image.width, "H": image.height, "Unit": "pixel"}
+                    with Image.open(src) as image:      # the size of the stored picture, as the regions are
+                        wide, high = (image.height, image.width) if now >= 5 and photo["ext"] in HEIF_EXT \
+                            else (image.width, image.height)
+                        info["AppliedToDimensions"] = {"W": wide, "H": high, "Unit": "pixel"}
             tags = {REGION_TAG: info if regions else None}
             want = _names(tags[REGION_TAG])
             temp = self._beside(src)
@@ -821,6 +866,7 @@ class Editor:
             finally:
                 temp.unlink(missing_ok=True)
             record = self.index.refresh(photo["path"])
+            self._tell(photo["hash"], record["hash"], 1, photo["path"])     # where the hash covers the whole file
             self.journal.add(user=user, batch=batch or secrets.token_hex(6), action="faces", path=photo["path"],
                              before={"people": _names(old)}, after={"people": want},
                              tags={REGION_TAG: old}, sha_after=file_hash(src))
@@ -1013,6 +1059,6 @@ class Editor:
                     turned.unlink(missing_ok=True)
             self.journal.mark_undone(entry["id"], user)
             record = self.index.refresh(entry["path"])
-            if turned and was:
+            if was:         # turned back – or words taken out of a file whose hash covers all of it
                 self._tell(was["hash"], record["hash"], op, entry["path"])
             return record

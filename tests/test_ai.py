@@ -118,3 +118,56 @@ def test_ai_respects_areas_and_rights(rw, model):
     key = guest.get("/api/photos?month=2024-07").json()[0]["key"]
     assert guest.post(f"/api/photos/{key}/ai", json={}).status_code == 403
     assert guest.get("/api/ai").status_code == 403 and not FakeModel.seen
+
+
+def test_the_ai_is_told_who_is_in_the_picture():
+    from augenblick.ai import photo_prompt
+
+    photo = {"name": "a.jpg", "folder": "2020", "taken": "2020-05-01T10:00:00", "taken_src": "exif",
+             "people": ["Greta", "Paul"]}
+    assert "Greta, Paul" in photo_prompt(photo, "Beschreibe.", [])
+    assert "Personen im Bild" not in photo_prompt({**photo, "people": []}, "Beschreibe.", [])
+
+
+def test_a_stored_copy_of_the_old_wording_follows_the_built_in_one():
+    from augenblick.ai import AIConfig, prompts_of
+    from augenblick.lang import PHOTO_TASK, PHOTO_TASK_BEFORE
+
+    old = next(text for text in PHOTO_TASK_BEFORE if text.startswith("Beschreibe das Foto"))
+    config = AIConfig(prompts=[{"name": "Beschreiben", "text": old}, {"name": "Eigenes", "text": "Zähle die Hunde."}],
+                      default_prompt="Beschreiben")
+    offered, default = prompts_of(config, "de")
+    assert default == "Beschreiben"
+    assert offered[0]["text"] == PHOTO_TASK["de"][1] and "Meer" in offered[0]["text"]
+    assert offered[1]["text"] == "Zähle die Hunde."
+
+
+def test_the_ai_describes_what_is_there_and_it_can_be_taken_back(rw, model):
+    import time
+
+    rw.put("/api/ai", json={"enabled": True, "provider": "ollama", "base_url": model, "model": "sehmodell"})
+    index = rw.app.state.index
+    photos = [index.by_path(row["path"]) for row in index._all(
+        "SELECT path FROM photos WHERE kind = 'image' AND error = '' AND keywords = '' AND ext != 'dng' ORDER BY path")]
+    kept = photos[0]
+    assert rw.post("/api/edit", json={"keys": [kept["key"]], "change": {"keywords": ["Eigenes"]}}).json()[0]["ok"]
+    stock = rw.get("/api/ai/stock").json()
+    assert stock["waiting"] == len(photos) - 1 and stock["cost"] is None and stock["model"] == "sehmodell"
+    assert rw.post("/api/ai/stock", json={}).json()["total"] == len(photos) - 1
+    for _ in range(600):
+        if not rw.get("/api/job").json()["running"]:
+            break
+        time.sleep(0.1)
+    job = rw.get("/api/job").json()
+    assert job["kind"] == "aistock" and job["failed"] == 0 and job["done"] == len(photos) - 1
+    assert index.by_path(kept["path"])["keywords"] == ["Eigenes"]              # what a person wrote stays
+    for before in photos[1:]:
+        now = index.by_path(before["path"])
+        assert now["keywords"] == ["Strand", "Meer"]
+        assert now["description"] == (before["description"] or "Ein Strand mit Meer")      # only where there was none
+    other = index.by_path(photos[1]["path"])
+    assert rw.get("/api/ai/stock").json()["waiting"] == 0
+    entry = next(e for e in rw.get("/api/journal").json() if e["path"] == other["path"])
+    assert entry["user"] == "KI"
+    assert rw.post(f"/api/journal/{entry['id']}/undo").status_code == 200
+    assert rw.get(f"/api/photos/{other['key']}").json()["keywords"] == []

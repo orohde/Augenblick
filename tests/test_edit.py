@@ -392,3 +392,35 @@ def test_empty_structure_field_is_like_a_missing_one():
     region = {"Area": {"X": 0.5}, "Type": "Face"}
     assert _alike({"RegionList": [region]}, {"RegionList": [dict(region, Extensions="")]})
     assert not _alike({"RegionList": [region]}, {"RegionList": [dict(region, Name="Oma")]})
+
+
+def test_who_took_it_lives_in_the_file(rw):
+    key = key_of(rw, "passt.jpg")
+    path = rw.photos / "Familie/dreh/passt.jpg"
+    pixels = jpeg_image_hash(path.read_bytes())
+    names = ("IFD0:Artist", "XMP-dc:Creator", "IPTC:By-line")
+    assert rw.get(f"/api/photos/{key}").json()["creator"] == "" and rw.get("/api/creators").json() == []
+    body = rw.patch(f"/api/photos/{key}", json={"creator": "  Greta   Müller "}).json()
+    assert body["creator"] == "Greta Müller" and jpeg_image_hash(path.read_bytes()) == pixels
+    assert tags(path, *names) == {"SourceFile": str(path), "IFD0:Artist": "Greta Müller", "XMP-dc:Creator": "Greta Müller"}
+    # the index can be thrown away: the name comes back from the file
+    assert rw.app.state.index.refresh("Familie/dreh/passt.jpg")["creator"] == "Greta Müller"
+    # found by the name, in the list and in the search
+    assert rw.get("/api/creators").json() == [{"creator": "Greta Müller", "count": 1}]
+    month = "2020-01"
+    assert [p["key"] for p in rw.get(f"/api/photos?month={month}&creator=Greta%20M%C3%BCller").json()] == [key]
+    assert rw.get(f"/api/photos?month={month}&creator=Jemand").json() == []
+    assert [p["key"] for p in rw.get(f"/api/photos?month={month}&q=greta").json()] == [key]
+    # many at once: the one that has the name already is left alone
+    other = key_of(rw, "krumm.jpg")
+    done = rw.post("/api/edit", json={"keys": [key, other], "change": {"creator": "Greta Müller"}})
+    assert done.status_code == 200, done.text
+    assert rw.get("/api/creators").json() == [{"creator": "Greta Müller", "count": 2}]
+    entry = rw.get("/api/journal").json()[0]
+    assert entry["before"] == {"creator": ""} and entry["after"] == {"creator": "Greta Müller"}
+    # taking the name away, and taking that back
+    assert rw.patch(f"/api/photos/{key}", json={"creator": ""}).json()["creator"] == ""
+    assert tags(path, *names) == {"SourceFile": str(path)}
+    undone = rw.post(f"/api/journal/{rw.get('/api/journal').json()[0]['id']}/undo")
+    assert undone.status_code == 200 and undone.json()["creator"] == "Greta Müller"
+    assert tags(path, "IFD0:Artist")["IFD0:Artist"] == "Greta Müller"

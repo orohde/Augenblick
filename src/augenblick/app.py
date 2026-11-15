@@ -22,7 +22,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from . import __version__
-from .ai import (MEMORY_SYSTEM, PHOTO_SYSTEM, AIError, AIService, in_language, memory_prompt, parse_memory, parse_suggestion,
+from .ai import (MEMORY_SYSTEM, MODEL_LABELS, PHOTO_SYSTEM, PRICES, AIError, AIService, in_language, memory_prompt, parse_memory, parse_suggestion,
                  photo_prompt, prompts_of)
 from .auth import (User, client_ip, cookie_name, current_user, is_external, is_https, require_admin, request_lang,
                    session_token)
@@ -78,6 +78,7 @@ class UploadIn(BaseModel):
 
 class UploadKeyIn(BaseModel):
     name: str | None = Field(None, max_length=40, description="whose phone this key is for")
+    creator: str | None = Field(None, max_length=100, description="who takes the pictures; written into each as it arrives")
     area: str | None = Field(None, max_length=40, description="the area it uploads into; '' = the usual one")
 
 
@@ -157,9 +158,16 @@ class Change(BaseModel):
     add_keywords: list[str] | None = Field(None, max_length=200)
     remove_keywords: list[str] | None = Field(None, max_length=200)
     rating: int | None = Field(None, ge=0, le=5)
+    creator: str | None = Field(None, max_length=100, description="who took the picture; '' takes the name away")
     albums: list[str] | None = Field(None, max_length=100, description="album paths like Urlaub/USA 2010")
     add_albums: list[str] | None = Field(None, max_length=100)
     remove_albums: list[str] | None = Field(None, max_length=100)
+
+
+class StockRun(BaseModel):
+    model: str | None = Field(None, max_length=100, description="the model to ask; left out: the small one")
+    areas: list[str] | None = Field(None, max_length=100, description="only these areas; left out: all")
+    limit: int | None = Field(None, ge=1, le=1_000_000, description="at most this many pictures")
 
 
 class FaceCheck(BaseModel):
@@ -456,7 +464,11 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     decisions = app.state.decisions = Decisions(settings.photos, index, prefs, settings.ignored_path, settings.apart_path)
 
     def follow_turn(old: str, new: str, n: int, path: str) -> None:
-        if decisions.turned(old, new, n, path):
+        moved = decisions.turned(old, new, n, path)
+        if n == 1:                          # the same picture under another hash: the faces found in it stay found
+            still = bool(index._all("SELECT 1 FROM photos WHERE hash = ? AND path != ? LIMIT 1", (old, path)))
+            moved += people.follow(old, new, still)
+        if moved:
             people._changes += 1            # both keep what they worked out; it no longer holds
             dupes._worked = None
 
@@ -756,7 +768,8 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     # ------------------------------------------------------------ photos
 
     def filters(folder: str = Query("", max_length=2000), recursive: bool = True, q: str = Query("", max_length=200),
-                camera: str = Query("", max_length=200), no_place: bool = False, no_date: bool = False,
+                camera: str = Query("", max_length=200), creator: str = Query("", max_length=100),
+                no_place: bool = False, no_date: bool = False,
                 kind: str = Query("", pattern="^(image|video|)$"), misfit: bool = False,
                 album: str = Query("", max_length=2000), person: str = Query("", max_length=100),
                 country: str = Query("", max_length=200), city: str = Query("", max_length=200),
@@ -764,7 +777,7 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
                 since: str = Query("", pattern=r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)?$"),
                 until: str = Query("", pattern=r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)?$"),
                 keys: str = Query("", max_length=2000, pattern=r"^[0-9a-f,-]*$")) -> dict:
-        return {"folder": folder.strip("/"), "recursive": recursive, "q": q, "camera": camera, "auto": auto,
+        return {"folder": folder.strip("/"), "recursive": recursive, "q": q, "camera": camera, "creator": creator, "auto": auto,
                 "since": since, "until": until, "keys": [k for k in keys.split(",") if k] if keys else None,
                 "no_place": no_place, "no_date": no_date, "kind": kind, "misfit": misfit, "album": album.strip("/"),
                 "person": person.strip(), "country": country, "city": city}
@@ -861,6 +874,11 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     def place_names(areas: str | None = Query(None), user: User = Depends(current_user)):
         """The countries and towns the photos were taken in – worked out from the coordinates on this machine."""
         return index.place_names(pick_areas(user, areas))
+
+    @app.get("/api/creators", tags=["photos"])
+    def creators(areas: str | None = Query(None), user: User = Depends(current_user)):
+        """Who took the pictures, as the files say it – with how many each."""
+        return index.creators(pick_areas(user, areas))
 
     @app.get("/api/cameras", tags=["photos"])
     def cameras(areas: str | None = Query(None), user: User = Depends(current_user)):
@@ -1512,6 +1530,9 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
                 if not keeper.get("description") and other.get("description") and "description" not in change:
                     change["description"] = other["description"]
                     merged.append("description")
+                if not keeper.get("creator") and other.get("creator") and "creator" not in change:
+                    change["creator"] = other["creator"]
+                    merged.append("creator")
                 if not keeper.get("rating") and other.get("rating") and "rating" not in change:
                     change["rating"] = other["rating"]
                     merged.append("rating")
@@ -1869,7 +1890,7 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
             proposals.put(photo["path"], answer)        # kept, so it is still there when the picture is opened again
         return answer
 
-    def look_at(photo: dict, task: str, lang: str) -> dict:
+    def look_at(photo: dict, task: str, lang: str, model: str = "") -> dict:
         """Show the picture to the AI with the task; what comes back is a proposal, nothing is written."""
         try:
             image, _ = read_image(file_of(photo).read_bytes())
@@ -1879,8 +1900,85 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         except Exception as exc:
             raise AIError("the picture cannot be read") from exc
         prompt = photo_prompt(photo, task, index.common_keywords([photo["area"]]))
-        answer = ai.complete(in_language(PHOTO_SYSTEM, lang), prompt, max_tokens=4000, images=[picture])
+        answer = ai.complete(in_language(PHOTO_SYSTEM, lang), prompt, max_tokens=4000, images=[picture], model=model)
         return {**parse_suggestion(answer.text), "model": answer.model, "seconds": answer.seconds, "cost": answer.cost}
+
+    # ------------------------------------------------------------- the pictures that are there already
+
+    # The one place where the AI writes by itself: nobody confirms twenty thousand proposals one
+    # by one. It only fills what is empty – keywords where there are none, a description where
+    # there is none – and every picture gets its line in the journal, so it can be taken back.
+    STOCK_USER = "KI"
+    STOCK_STOPS = ("monthly limit reached", "AI is disabled", "API key rejected", "no API key", "unknown model")
+    STOCK_COST = 0.0006      # USD per picture with Haiku 5.5, measured on 2026-11-15
+
+    def stock_model(config, wanted: str = "") -> str:
+        return wanted or ("claude-haiku-5-5" if config.provider == "anthropic" else config.model)
+
+    def stock_waiting(user: User) -> list[dict]:
+        """The pictures nobody has given keywords yet, in the areas the AI may see and the asker may write to."""
+        arrives = app.state.inbox.areas()
+        areas = [a for a in allowed_areas(user) if a not in arrives and user.can_write(a) and ai.allowed_for(a)]
+        if not areas:
+            return []
+        raw = ", ".join("?" * len(RAW_EXT))
+        return [dict(row) for row in index._all(
+            f"SELECT path, area FROM photos WHERE kind = 'image' AND error = '' AND keywords = '' AND ext NOT IN ({raw}) "
+            f"AND area IN ({', '.join('?' * len(areas))}) ORDER BY taken DESC", [*RAW_EXT, *areas])]
+
+    @app.get("/api/ai/stock", tags=["ai"])
+    def ai_stock(model: str = Query("", max_length=100), user: User = Depends(require_admin)):
+        """How many pictures still wait for keywords, and roughly what looking at them costs."""
+        config = ai.load()
+        waiting = stock_waiting(user)
+        areas: dict[str, int] = {}
+        for item in waiting:
+            areas[item["area"]] = areas.get(item["area"], 0) + 1
+        chosen = stock_model(config, model)
+        price = PRICES.get(chosen) if config.provider == "anthropic" else None
+        return {"waiting": len(waiting), "areas": areas, "model": chosen, "enabled": config.enabled,
+                "models": [{"id": m, "label": MODEL_LABELS.get(m, m)} for m in PRICES] if config.provider == "anthropic" else [],
+                "cost": round(len(waiting) * STOCK_COST * price[0] / PRICES["claude-haiku-5-5"][0], 2) if price else None}
+
+    @app.post("/api/ai/stock", tags=["ai"], status_code=202)
+    def ai_stock_run(body: StockRun, user: User = Depends(require_admin), lang: str = Depends(request_lang)):
+        """Let the AI look at every picture without keywords and write what it finds into the picture."""
+        if settings.readonly:
+            raise HTTPException(status_code=403, detail="read-only")
+        config = ai.load()
+        if not config.enabled:
+            raise HTTPException(status_code=422, detail="AI is disabled")
+        items = stock_waiting(user)
+        if body.areas:
+            items = [item for item in items if item["area"] in body.areas]
+        items = items[:body.limit] if body.limit else items
+        model = stock_model(config, (body.model or "").strip())
+        offered, default = prompts_of(config, lang)
+        task = next((p["text"] for p in offered if p["name"].casefold() == default.casefold()), offered[0]["text"])
+        batch = secrets.token_hex(6)
+        job = app.state.job
+
+        def work(item: dict) -> None:
+            photo = index.by_path(item["path"])
+            if not photo or photo["keywords"] or not ai.allowed_for(photo["area"]):
+                return                              # gone, or somebody was quicker
+            try:
+                answer = look_at(photo, task, lang, model)
+            except AIError as exc:
+                if any(reason in str(exc) for reason in STOCK_STOPS):
+                    job["stop"] = True              # no use asking twenty thousand times
+                raise
+            change: dict = {}
+            if answer["keywords"]:
+                change["add_keywords"] = answer["keywords"]
+            if answer["description"] and not photo["description"]:
+                change["description"] = answer["description"]
+            if not change:
+                raise AIError("the AI found nothing to say")
+            editor.change(photo, change, STOCK_USER, batch)
+
+        start_job("aistock", MODEL_LABELS.get(model, model), items, work)
+        return {"total": len(items), "model": model}
 
     # ------------------------------------------------------------- inbox
 
@@ -2202,14 +2300,15 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     def add_upload_key(body: UploadKeyIn, user: User = Depends(require_admin)):
         """One more upload key – for another phone or another person. Shown this once, only its hash is
         kept. It opens nothing but the upload door, into the usual area or the one named here."""
-        key_id, key = inbox.new_key(body.name or "", known_upload_area(body.area or ""))
+        key_id, key = inbox.new_key(body.name or "", known_upload_area(body.area or ""), creator=body.creator or "")
         return {**upload_state(), "key": key, "key_id": key_id}
 
     @app.patch("/api/upload/keys/{key_id}", tags=["upload"])
     def change_upload_key(key_id: str, body: UploadKeyIn, user: User = Depends(require_admin)):
         """Another name for a key, or another area it leads into ('' = the usual one)."""
         try:
-            inbox.change_key(key_id, body.name, None if body.area is None else known_upload_area(body.area))
+            inbox.change_key(key_id, body.name, None if body.area is None else known_upload_area(body.area),
+                             body.creator)
         except KeyError:
             raise HTTPException(status_code=404, detail="unknown key") from None
         return upload_state()
@@ -2241,7 +2340,7 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         inbox.drop_key()
         return upload_state()
 
-    mount_upload(app, inbox, settings.photos, settings.readonly, client_ip, app.state.wake)
+    mount_upload(app, inbox, settings.photos, settings.readonly, client_ip, app.state.wake, sign=editor.sign)
 
     app.mount("/", StaticFiles(directory=STATIC, html=True), name="ui")
     return app

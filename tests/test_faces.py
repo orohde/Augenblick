@@ -929,3 +929,62 @@ def test_faces_that_stand_alone_are_bundled_as_guesses_and_a_rest():
     assert (True, False, "Florian", [2]) in kinds                           # a little like him: a guess
     assert kinds[-1] == (False, True, "", [3, 4, 5])                        # the rest, last – with the one that may not be him
     assert found["total"] == 3 and found["faces"] == 6
+
+
+def test_a_face_the_camera_marked_gets_a_guess_too(crowd):
+    """Apple marks faces without names. Such a mark is the face – it is offered the name of who it looks like."""
+    people = crowd.app.state.people
+    mark(crowd.photos / "Familie/c/bild2.jpg", face(BLOCK))
+    crowd.app.state.index.scan()
+    people.search()
+    first = key_of(crowd, "bild0.jpg")
+    assert crowd.put(f"/api/photos/{first}/faces", json=dict(zip("xywh", BLOCK), name="Opa")).status_code == 200
+    shown_faces = crowd.get(f"/api/photos/{key_of(crowd, 'bild2.jpg')}/faces").json()
+    assert len(shown_faces) == 1 and shown_faces[0]["marked"] and shown_faces[0]["name"] == ""
+    assert shown_faces[0]["face"] and shown_faces[0]["proposal"] == "Opa"
+    # waved away, it is offered nothing any more
+    crowd.post("/api/faces/ignore", json={"faces": [shown_faces[0]["face"]], "ignored": True})
+    assert crowd.get(f"/api/photos/{key_of(crowd, 'bild2.jpg')}/faces").json()[0]["proposal"] == ""
+
+
+@needs_tools
+def test_found_faces_stay_when_words_change_the_hash(crowd):
+    """A PNG is known by the hash of the whole file: writing into it makes it another file. The faces
+    found in it are still there – they do not vanish until the search comes by again."""
+    people = crowd.app.state.people
+    picture = crowd.photos / "Familie/c/schirm.png"
+    Image.new("RGB", (64, 48), (10, 10, 40)).save(picture, "PNG")
+    crowd.app.state.index.scan()
+    people.search()
+    key = key_of(crowd, "schirm.png")
+    before = crowd.app.state.index.by_path("Familie/c/schirm.png")
+    found = crowd.get(f"/api/photos/{key}/faces").json()
+    assert len(found) == 1 and not found[0]["marked"] and found[0]["face"]
+    changed = crowd.patch(f"/api/photos/{key}", json={"description": "Bildschirmfoto"}).json()
+    assert crowd.app.state.index.by_path("Familie/c/schirm.png")["hash"] != before["hash"]
+    after = crowd.get(f"/api/photos/{changed['key']}/faces").json()
+    assert [f["face"] for f in after] == [found[0]["face"]] and not after[0]["marked"]
+    assert crowd.get(f"/api/faces/{found[0]['face']}/thumb").status_code in (200, 404)
+    # naming one keeps it the found face, and taking the change back does not lose it either
+    named = crowd.put(f"/api/photos/{changed['key']}/faces", json=dict(zip("xywh", BLOCK), name="Oma")).json()
+    marked = crowd.get(f"/api/photos/{named['key']}/faces").json()
+    assert marked[0]["name"] == "Oma" and marked[0]["face"] == found[0]["face"]
+    entry = crowd.get("/api/journal").json()[0]
+    undone = crowd.post(f"/api/journal/{entry['id']}/undo")
+    assert undone.status_code == 200, undone.text
+    assert [f["face"] for f in crowd.get(f"/api/photos/{undone.json()['key']}/faces").json()] == [found[0]["face"]]
+    assert people.search()["looked"] == 0                   # nothing had to be looked at again
+
+
+@needs_tools
+def test_marks_copied_onto_a_cut_out_point_nowhere(rw):
+    """A programme that cuts a piece out of a photo and copies the marked faces along unchanged leaves
+    marks that fit another picture. They are not shown as faces; a name among them is kept."""
+    path = rw.photos / "Familie/p/block.jpg"
+    mark(path, face((0.7, 0.3, 0.1, 0.1)), face((0.5, 0.5, 0.1, 0.1), "Opa"), size=(5712, 3000))
+    _, meta = read_image(path.read_bytes())
+    assert [r["name"] for r in meta["regions"]] == ["Opa"] and meta["people"] == ["Opa"]
+    mark(path, face((0.7, 0.3, 0.1, 0.1)), size=(640, 480))                 # the same shape, only larger: they fit
+    assert len(read_image(path.read_bytes())[1]["regions"]) == 1
+    mark(path, face((0.7, 0.3, 0.1, 0.1)), size=(480, 640))                 # … or noted the other way round
+    assert len(read_image(path.read_bytes())[1]["regions"]) == 1

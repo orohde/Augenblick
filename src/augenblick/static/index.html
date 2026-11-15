@@ -75,6 +75,7 @@
         <div id="area-chips" class="chips" role="group" aria-label="Bereiche"></div>
         <label class="toolbar__check"><input type="checkbox" id="chk-recursive" checked><span>mit Unterordnern</span></label>
         <select id="sel-camera" class="fd-input toolbar__select" aria-label="Kamera"><option value="">Alle Kameras</option></select>
+        <select id="sel-creator" class="fd-input toolbar__select" aria-label="Fotograf" hidden><option value="">Alle Fotografen</option></select>
         <select id="sel-place" class="fd-input toolbar__select" aria-label="Ort" hidden><option value="">Alle Orte</option></select>
         <select id="sel-kind" class="fd-input toolbar__select" aria-label="Art">
           <option value="">Fotos und Videos</option><option value="image">Nur Fotos</option><option value="video">Nur Videos</option>
@@ -466,6 +467,16 @@
               <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
             </div>
           </form>
+          <div class="card admin-only">
+            <div class="pane-head">
+              <h4 class="fd-title fd-title--h5 card-title">Bestand beschreiben</h4>
+              <span class="inline"><select class="fd-input" id="stock-model" aria-label="Modell" hidden></select>
+                <button id="stock-go" class="fd-button" type="button">Jetzt beschreiben</button></span>
+            </div>
+            <p id="stock-text" class="job-text"></p>
+            <p class="field-hint">Die KI sieht sich jedes Bild an, das noch keine Schlagworte hat, und schreibt Schlagworte und – wo keine steht – eine kurze Beschreibung in das Bild. Danach findet die Suche Bilder nach ihrem Inhalt, etwa „Meer“ oder „Hochzeit“. Anders als sonst schreibt die KI hier selbst; jedes Bild steht danach unter „Änderungen“ und lässt sich zurücknehmen. Vorhandene Beschreibungen und Schlagworte bleiben, der Eingang bleibt außen vor. Der Lauf steht unter „Aufträge“, lässt sich dort abbrechen und macht beim nächsten Mal dort weiter, wo er aufgehört hat.</p>
+            <p id="stock-msg" class="form-msg" role="status"></p>
+          </div>
         </section>
 
         <section class="set-pane" data-pane="sicherheit" hidden>
@@ -541,6 +552,7 @@
             </div>
             <h5 class="fd-title fd-title--h6 up-head">Upload-Schlüssel</h5>
             <p class="field-hint">Je Telefon oder Person ein eigener Schlüssel: So lässt sich einer sperren, ohne die anderen zu stören. Ein Schlüssel kann in einen eigenen Bereich führen statt in den oben gewählten.</p>
+            <p class="field-hint">Steht bei einem Schlüssel ein Fotograf, schreibt Augenblick! diesen Namen beim Hochladen in jedes Bild, das noch keinen trägt. So bleibt erkennbar, von wem ein Bild stammt, auch wenn es später in einen anderen Bereich wandert.</p>
             <table class="fd-table up-table"><tbody id="up-keys" class="fd-table__body"></tbody></table>
             <div id="up-fresh" class="up-fresh" hidden>
               <span id="up-fresh-for"></span>
@@ -798,6 +810,8 @@
         </div>
         <label class="fd-form-label" for="e-desc">Beschreibung</label>
         <textarea class="fd-textarea" id="e-desc" rows="3" maxlength="2000"></textarea>
+        <label class="fd-form-label" for="e-creator">Fotograf</label>
+        <input class="fd-input" id="e-creator" maxlength="100" autocomplete="off">
         <label class="fd-form-label" for="e-words">Schlagworte, durch Komma getrennt</label>
         <input class="fd-input" id="e-words" autocomplete="off">
         <label class="fd-form-label" for="e-albums">Alben, durch Komma getrennt (Unteralbum mit /)</label>
@@ -814,6 +828,13 @@
       </form>
     </aside>
   </div>
+
+  <!-- ============================== Working on many ============================== -->
+  <dialog id="busy" class="batch busy" aria-labelledby="busy-title">
+    <h3 id="busy-title" class="fd-title fd-title--h5">Einen Moment …</h3>
+    <progress id="busy-bar" class="job-bar" max="1" value="0"></progress>
+    <p id="busy-text" aria-live="polite"></p>
+  </dialog>
 
   <!-- ============================== Several at once ============================== -->
   <dialog id="batch" class="batch">
@@ -852,6 +873,10 @@
         <legend>Alben</legend>
         <label for="b-album-add">hinzufügen</label><input class="fd-input" id="b-album-add" autocomplete="off" placeholder="Urlaub/USA 2010">
         <label for="b-album-remove">entfernen</label><input class="fd-input" id="b-album-remove" autocomplete="off">
+      </fieldset>
+      <fieldset>
+        <legend>Fotograf</legend>
+        <input class="fd-input" id="b-creator" maxlength="100" autocomplete="off" placeholder="leer heißt: nicht ändern" aria-label="Fotograf">
       </fieldset>
       <fieldset>
         <legend>Bewertung</legend>

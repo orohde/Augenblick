@@ -17,8 +17,8 @@ Most photo servers take your pictures into a store of their own and keep what yo
 
 ## Features
 
-- **Timeline, folder tree, map and single view** – pictures in their own shape, filters by camera, place, area; search over name, folder, description, keywords and place.
-- **Change date, place, description, keywords, rating** – for one picture or hundreds at once (the camera clock was off by two hours? shift them all). The place is picked on a map.
+- **Timeline, folder tree, map and single view** – pictures in their own shape, filters by camera, place, area; search over name, folder, description, keywords, place and photographer.
+- **Change date, place, description, keywords, photographer, rating** – for one picture or hundreds at once (the camera clock was off by two hours? shift them all). The place is picked on a map.
 - **Everything can be undone.** Every change is checked before it replaces the photo, the journal keeps the old values, deleting means the bin.
 - **Lossless rotation** of JPEG (jpegtran) and HEIC; marked faces turn with the picture.
 - **Edit pictures:** crop, straighten, light and colours – as a new picture beside the original, which stays untouched behind it.
@@ -26,11 +26,11 @@ Most photo servers take your pictures into a store of their own and keep what yo
 - **People.** Faces are found and grouped on your own machine (no cloud, no graphics card); names are stored as standard XMP regions.
 - **Duplicates**, also the same picture in another size; what only the copy knows is merged first.
 - **Sorting by rules**, if you want: a folder per year, file names from the date – with a preview, never without your say.
-- **Upload from the phone** over WebDAV (PhotoSync and others) into an inbox, with a key per phone that can do nothing but deliver.
+- **Upload from the phone** over WebDAV (PhotoSync and others) into an inbox, with a key per phone that can do nothing but deliver. A key can sign what it delivers with the photographer's name, and pictures keep the date the phone had for them.
 - **Working through the inbox:** the AI proposes a description and keywords for what arrives (on request or by itself), and faces are found there already. Strike out what does not fit and sort the picture in with one click – then the next one comes up.
 - **Films and Live Photos**, HEIC, ProRAW (DNG, read only).
 - **Areas and rights per person**, second factor, home-network rules, notifications via ntfy, REST API (`/api/docs`).
-- **AI if you want it** (Claude, Ollama or any OpenAI-compatible server): proposes descriptions and keywords, names a memory – it never writes by itself.
+- **AI if you want it** (Claude, Ollama or any OpenAI-compatible server): proposes descriptions and keywords, names a memory. It never writes by itself – with one exception you start yourself: letting it describe every picture that has no keywords yet, so that the search finds pictures by what they show (“sea”, “wedding”). Every such change can be undone.
 - **Four languages:** German, English, French, Italian – chosen per account.
 
 <table>

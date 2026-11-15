@@ -242,6 +242,8 @@ body {
   box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.35);
 }
 .batch::backdrop { background: rgba(0, 0, 0, 0.45); }
+.busy { width: min(24rem, calc(100vw - 2rem)); }
+.busy p { margin: 0.5rem 0 0; font-variant-numeric: tabular-nums; }
 .batch h3 { margin: 0 0 0.5rem; }
 .batch fieldset { border: 0; padding: 0; margin: 0.75rem 0 0; display: flex; flex-wrap: wrap; gap: 0.4rem 0.5rem; align-items: center; }
 .batch legend { padding: 0; margin-bottom: 0.25rem; color: var(--sapContent_LabelColor, #556b82); }
@@ -252,6 +254,7 @@ body {
 
 .place-row { display: flex; gap: 0.5rem; flex: 2 1 16rem; margin: 0; }
 .place-row .fd-input { flex: 1; min-width: 0; }
+.edit > .place-row { flex: none; }      /* in the form the fields stand one below the other: no height to share out */
 .map-dialog { width: min(52rem, calc(100vw - 2rem)); }
 .map { height: min(28rem, 55vh); margin-top: 0.5rem; border-radius: 0.5rem; background: #ddd; z-index: 0; }
 .map-hits { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem; }

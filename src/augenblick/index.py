@@ -53,7 +53,7 @@ CREATE TABLE meta (name TEXT PRIMARY KEY, value TEXT);
 COLUMNS = ("key", "hash", "area", "folder", "path", "name", "ext", "kind", "size", "mtime", "taken", "taken_src",
            "month", "width", "height", "orientation", "lat", "lon", "make", "model", "description", "keywords",
            "rating", "error", "target", "misfit", "albums", "people", "regions", "city", "state", "country",
-           "live", "seconds", "source", "recipe")
+           "live", "seconds", "source", "recipe", "creator")
 ADDED = {"target": "TEXT NOT NULL DEFAULT ''", "misfit": "INTEGER NOT NULL DEFAULT 0",
          "albums": "TEXT NOT NULL DEFAULT ''", "people": "TEXT NOT NULL DEFAULT ''",
          "regions": "TEXT NOT NULL DEFAULT ''", "city": "TEXT NOT NULL DEFAULT ''",
@@ -61,11 +61,15 @@ ADDED = {"target": "TEXT NOT NULL DEFAULT ''", "misfit": "INTEGER NOT NULL DEFAU
          "live": "TEXT NOT NULL DEFAULT ''",        # what a Live Photo and its short film have in common
          "seconds": "REAL NOT NULL DEFAULT 0",      # how long a film runs
          "source": "TEXT NOT NULL DEFAULT ''",      # a picture worked on here: the hash of the one it was made from
-         "recipe": "TEXT NOT NULL DEFAULT ''"}      # … and what was done to it (JSON)
+         "recipe": "TEXT NOT NULL DEFAULT ''",      # … and what was done to it (JSON)
+         "creator": "TEXT NOT NULL DEFAULT ''"}     # who took the picture, as the file says it
 # columns newer than schema 1; what these hold was not read before, so the files that can have it are looked at once more
-REREAD = {"people": "1", "live": "kind = 'video' OR make = 'Apple'", "source": "0", "recipe": "0", "seconds": "0"}
+REREAD = {"people": "1", "live": "kind = 'video' OR make = 'Apple'", "source": "0", "recipe": "0", "seconds": "0",
+          "creator": "kind = 'image'"}
 # The short film of a Live Photo is part of the photo while the two lie in one folder: it is not shown on its own.
 # The same holds for the original of a picture worked on here: it stands behind the picture made from it.
+# what is read from a file changed for these: they are looked at once more, each kind of change once
+AGAIN = {"heif-regions": "ext IN ('heic', 'heif', 'avif') AND regions != ''"}
 SHOWN = ("NOT (kind = 'video' AND live != '' AND EXISTS (SELECT 1 FROM photos still WHERE still.live = photos.live "
          "AND still.kind = 'image' AND still.folder = photos.folder)) "
          "AND NOT EXISTS (SELECT 1 FROM photos made WHERE made.source = photos.hash AND made.folder = photos.folder)")
@@ -154,6 +158,10 @@ class Index:
                     db.execute(f"ALTER TABLE photos ADD COLUMN {column} {kind}")
                     if column in REREAD:            # the entries stay usable; the next scan reads the files again
                         db.execute(f"UPDATE photos SET mtime = -1 WHERE {REREAD[column]}")
+            for name, which in AGAIN.items():
+                if not db.execute("SELECT 1 FROM meta WHERE name = ?", ("again-" + name,)).fetchone():
+                    db.execute(f"UPDATE photos SET mtime = -1 WHERE {which}")
+                    db.execute("INSERT INTO meta VALUES (?, '1')", ("again-" + name,))
             db.execute("CREATE INDEX IF NOT EXISTS photos_misfit ON photos (misfit)")
             db.execute("CREATE INDEX IF NOT EXISTS photos_live ON photos (live)")
             db.execute("CREATE INDEX IF NOT EXISTS photos_source ON photos (source)")
@@ -338,7 +346,7 @@ class Index:
     # ------------------------------------------------------------ queries
 
     def _where(self, areas: list[str], *, folder: str = "", recursive: bool = True, q: str = "",
-               camera: str = "", no_place: bool = False, no_date: bool = False, kind: str = "",
+               camera: str = "", creator: str = "", no_place: bool = False, no_date: bool = False, kind: str = "",
                misfit: bool = False, album: str = "", person: str = "", country: str = "",
                city: str = "", films: bool = False, auto: str = "", since: str = "", until: str = "",
                keys: list[str] | None = None) -> tuple[str, list]:
@@ -358,11 +366,14 @@ class Index:
         for word in q.split()[:8]:
             clauses.append("(name LIKE ? ESCAPE '\\' OR folder LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'"
                            " OR keywords LIKE ? ESCAPE '\\' OR city LIKE ? ESCAPE '\\' OR state LIKE ? ESCAPE '\\'"
-                           " OR country LIKE ? ESCAPE '\\')")
-            params += [f"%{_like(word)}%"] * 7
+                           " OR country LIKE ? ESCAPE '\\' OR creator LIKE ? ESCAPE '\\')")
+            params += [f"%{_like(word)}%"] * 8
         if camera:
             clauses.append("model = ?")
             params.append(camera)
+        if creator:
+            clauses.append("creator = ?")
+            params.append(creator)
         if no_place:        # "without a place" is a to-do list: areas that need none are not on it
             clauses.append("lat IS NULL")
             if self.no_places:
@@ -510,6 +521,12 @@ class Index:
         where, params = self._where(areas)
         return [{"model": r["model"], "count": r["n"]} for r in self._all(
             f"SELECT model, COUNT(*) n FROM photos WHERE {where} AND model != '' GROUP BY model ORDER BY n DESC",
+            params)]
+
+    def creators(self, areas: list[str]) -> list[dict]:
+        where, params = self._where(areas)
+        return [{"creator": r["creator"], "count": r["n"]} for r in self._all(
+            f"SELECT creator, COUNT(*) n FROM photos WHERE {where} AND creator != '' GROUP BY creator ORDER BY n DESC",
             params)]
 
     def photo(self, key: str, areas: list[str]) -> dict | None:

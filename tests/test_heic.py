@@ -117,3 +117,37 @@ def test_faces_and_the_exif_copy_turn_with_it(rw):
     assert rw.post(f"/api/journal/{entry['id']}/undo").status_code == 200
     back = rw.get(f"/api/photos/{key}/faces").json()[0]
     assert abs(back["x"] - 0.15) < 0.01 and tags(rw.path, "IFD0:Orientation")["IFD0:Orientation"] == 1
+
+
+def test_the_phones_own_face_marks_lie_in_the_stored_picture(rw):
+    """A phone held upright stores the picture lying and says so in the turn field. The faces it marks
+    are written relative to the stored picture – they must be shown, and named, the way the picture is seen."""
+    from test_faces import face, mark, stored
+    mark(rw.path, face((0.15, 0.15, 0.2, 0.2)), size=(96, 64))          # the bright corner, top left as stored
+    data = bytearray(rw.path.read_bytes())
+    at, _ = heif_turn(bytes(data))
+    data[at] = 3                                                        # three quarters anti-clockwise = one clockwise
+    rw.path.write_bytes(bytes(data))
+    rw.app.state.index.scan()
+    key = key_of(rw, "IMG_0001.HEIC")
+    box = rw.get(f"/api/photos/{key}/faces").json()[0]
+    assert box["marked"] and abs(box["x"] - 0.85) < 0.01 and abs(box["y"] - 0.15) < 0.01     # seen top right
+    crop = shown(rw.path).crop((44, 0, 64, 30)).resize((1, 1)).getpixel((0, 0))
+    assert crop[2] > 150                                                # … where the bright corner is
+    # naming it means the phone's mark, not a new one beside it
+    named = rw.put(f"/api/photos/{key}/faces", json={"x": box["x"], "y": box["y"], "w": box["w"], "h": box["h"], "name": "Ecke"})
+    assert named.status_code == 200 and named.json()["people"] == ["Ecke"]
+    regions = stored(rw.path)["RegionList"]
+    assert len(regions) == 1 and regions[0]["Name"] == "Ecke" and abs(regions[0]["Area"]["X"] - 0.15) < 0.001
+    # a face drawn by hand is written the way the phone would have: relative to the stored picture
+    drawn = rw.put(f"/api/photos/{key}/faces", json={"x": 0.5, "y": 0.8, "w": 0.2, "h": 0.1, "name": "Mitte"})
+    assert drawn.status_code == 200 and drawn.json()["people"] == ["Ecke", "Mitte"]
+    area = stored(rw.path)["RegionList"][1]["Area"]
+    assert abs(area["X"] - 0.8) < 0.001 and abs(area["Y"] - 0.5) < 0.001 and abs(area["W"] - 0.1) < 0.001
+    seen = {f["name"]: f for f in rw.get(f"/api/photos/{key}/faces").json()}
+    assert abs(seen["Mitte"]["x"] - 0.5) < 0.01 and abs(seen["Mitte"]["y"] - 0.8) < 0.01
+    # turning the picture leaves the marks in the file alone and shows them turned
+    body = rw.post(f"/api/photos/{key}/rotate", json={"degrees": 90}).json()
+    assert stored(rw.path)["RegionList"][0]["Area"]["X"] == regions[0]["Area"]["X"]
+    seen = {f["name"]: f for f in rw.get(f"/api/photos/{body['key']}/faces").json()}
+    assert abs(seen["Ecke"]["x"] - 0.85) < 0.01 and abs(seen["Ecke"]["y"] - 0.85) < 0.01     # top right went bottom right

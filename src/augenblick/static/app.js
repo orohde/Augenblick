@@ -65,7 +65,7 @@ const State = {
   misfit: false,
   albums: [],
   recursive: store.get('recursive', true),
-  q: '', camera: '', place: '', kind: '', noPlace: false, noDate: false,
+  q: '', camera: '', creator: '', place: '', kind: '', noPlace: false, noDate: false,
   tree: [],
   open: new Set(store.get('open', [])),
   openAlbums: new Set(store.get('openAlbums', [])),
@@ -238,6 +238,7 @@ function query() {
   if (!State.recursive) params.set('recursive', 'false');
   if (State.q) params.set('q', State.q);
   if (State.camera) params.set('camera', State.camera);
+  if (State.creator) params.set('creator', State.creator);
   if (State.place) {      // "country" or "country|town"
     const [country, city] = State.place.split('|');
     params.set('country', country);
@@ -677,6 +678,18 @@ async function loadCameras() {
   for (const camera of cameras) select.append(el('option', { value: camera.model }, `${camera.model} (${number(camera.count)})`));
   select.value = cameras.some((c) => c.model === State.camera) ? State.camera : '';
   State.camera = select.value;
+  loadCreators();
+}
+
+// who took the pictures, as the files say it – the list stays hidden as long as no file says so
+async function loadCreators() {
+  const creators = await api('creators?areas=' + encodeURIComponent(areaQuery()));
+  const select = $('sel-creator');
+  select.replaceChildren(el('option', { value: '' }, t('Alle Fotografen')));
+  for (const entry of creators) select.append(el('option', { value: entry.creator }, `${entry.creator} (${number(entry.count)})`));
+  select.value = creators.some((c) => c.creator === State.creator) ? State.creator : '';
+  if (State.creator !== select.value) { State.creator = select.value; reload(); }
+  select.hidden = !creators.length;
 }
 
 // the towns are worked out from the coordinates – the list stays hidden as long as there are none
@@ -704,6 +717,7 @@ async function loadPlaceNames() {
 
 $('sel-place').addEventListener('change', (e) => { State.place = e.target.value; reload(); });
 $('sel-camera').addEventListener('change', (e) => { State.camera = e.target.value; reload(); });
+$('sel-creator').addEventListener('change', (e) => { State.creator = e.target.value; reload(); });
 $('sel-kind').addEventListener('change', (e) => { State.kind = e.target.value; reload(); });
 $('chk-noplace').addEventListener('change', (e) => { State.noPlace = e.target.checked; reload(); });
 $('chk-nodate').addEventListener('change', (e) => { State.noDate = e.target.checked; reload(); });
@@ -1119,6 +1133,7 @@ function showPhoto(photo) {
   fact(facts, t('Datum'), when, DATE_SOURCE[photo.taken_src] ? el('span', { class: 'hint' }, DATE_SOURCE[photo.taken_src]) : null);
   fact(facts, t('Ordner'), el('a', { href: '#/ordner/' + photo.folder.split('/').map(encodeURIComponent).join('/'), onclick: closeViewer }, photo.folder));
   if (photo.description) fact(facts, t('Beschreibung'), photo.description);
+  if (photo.creator) fact(facts, t('Fotograf'), photo.creator);
   if (photo.keywords.length) fact(facts, t('Schlagworte'), ...photo.keywords.map((k) => el('span', { class: 'tag' }, k)));
   if (photo.albums.length) fact(facts, t('Alben'), ...photo.albums.map((a) => el('a', { class: 'tag', href: albumHref(a), onclick: closeViewer }, a)));
   facts.append(el('dt', { id: 'v-people-label', hidden: true }, t('Personen')), el('dd', { id: 'v-people-fact', hidden: true }));
@@ -1851,6 +1866,9 @@ function showUpload(state, key = '', keyId = '') {
       where.value = state.areas.includes(entry.area) ? entry.area : '';
       return where;
     })()),
+    el('td', {}, el('input', { class: 'fd-input', value: entry.creator || '', maxlength: '100', placeholder: t('Fotograf'), 'aria-label': t('Fotograf für {0}', [called(entry)]),
+      title: t('Dieser Name wird beim Hochladen in jedes Bild geschrieben, das noch keinen Fotografen nennt. Leer: nichts wird geschrieben.'),
+      onchange: (event) => change(entry, { creator: event.target.value }) })),
     el('td', { class: 'up-used' }, t('vom {0}', [when(entry.made)]), el('br'), entry.last ? t('{0} Dateien, zuletzt {1}', [number(entry.count), when(entry.last)]) : t('noch nichts hochgeladen')),
     el('td', {}, el('button', { class: 'fd-button fd-button--compact', type: 'button', onclick: async () => {
       if (!window.confirm(t('Neuen Schlüssel für „{0}“ erzeugen? Der bisherige funktioniert dann sofort nicht mehr – die App braucht den neuen.', [called(entry)]))) return;
@@ -1944,6 +1962,7 @@ const PROBLEMS = [
   ['AI is disabled', t('Die KI ist ausgeschaltet.')],
   ['AI is not allowed for this area', t('Für diesen Bereich ist die KI gesperrt.')],
   ['monthly limit reached', t('Das Monatslimit für die KI ist erreicht.')],
+  ['the AI found nothing to say', t('Die KI hatte zu dem Bild nichts zu sagen.')],
   ['no API key', t('Es ist kein API-Schlüssel hinterlegt.')],
   ['API key rejected', t('Der Anbieter lehnt den API-Schlüssel ab.')],
   ['not an Anthropic key', t('Das sieht nicht nach einem Anthropic-Schlüssel aus (er beginnt mit sk-ant-).')],
@@ -2042,6 +2061,7 @@ $('v-edit').addEventListener('click', () => {
   $('e-taken').value = photo.taken;
   $('e-place').value = photo.lat === null ? '' : `${photo.lat}, ${photo.lon}`;
   $('e-desc').value = photo.description || '';
+  $('e-creator').value = photo.creator || '';
   $('e-words').value = photo.keywords.join(', ');
   $('e-albums').value = photo.albums.join(', ');
   $('e-rating').value = String(photo.rating || 0);
@@ -2066,6 +2086,7 @@ $('v-form').addEventListener('submit', async (event) => {
     if (photo.lat === null || Math.abs(spot.lat - photo.lat) > 1e-6 || Math.abs(spot.lon - photo.lon) > 1e-6) Object.assign(change, spot);
   }
   if ($('e-desc').value.trim() !== (photo.description || '')) change.description = $('e-desc').value;
+  if ($('e-creator').value.trim() !== (photo.creator || '')) change.creator = $('e-creator').value.trim();
   const list = words($('e-words').value);
   if (list.join('\n') !== photo.keywords.join('\n')) change.keywords = list;
   if (Number($('e-rating').value) !== (photo.rating || 0)) change.rating = Number($('e-rating').value);
@@ -2078,6 +2099,7 @@ $('v-form').addEventListener('submit', async (event) => {
     adopt(updated, photo.key);
     if (Viewer.key === photo.key) { Viewer.key = updated.key; showPhoto(updated); message($('v-msg'), t('Ins Bild geschrieben.')); }
     if (change.albums) loadAlbums();
+    if ('creator' in change) loadCreators();
     if (updated.misfit && !photo.misfit && Viewer.key === updated.key
       && window.confirm(t('Das Bild passt jetzt nicht mehr an seinen Platz.\n\n{0}\n→ {1}\n\nGleich einsortieren?', [updated.path, updated.target]))) sortShown();
   } catch (err) { message($('v-msg'), explain(err.message), true); }
@@ -2221,8 +2243,12 @@ async function runMany(path, payload, tell, verb = t('geändert')) {
   const keys = [...State.selected];
   const batch = randomHex();
   let good = 0; const bad = [];
+  // more than a handful takes a while: say so in the middle of the screen, and keep hands off till it is done
+  const busy = keys.length > 10 ? $('busy') : null;
+  if (busy) { $('busy-bar').max = keys.length; $('busy-bar').value = 0; busy.showModal(); }
   for (let i = 0; i < keys.length; i += 10) {
     tell(t('{0} von {1} …', [number(i), number(keys.length)]));
+    if (busy) { $('busy-bar').value = i; $('busy-text').textContent = t('{0} von {1} …', [number(i), number(keys.length)]); }
     let results;
     try { results = await api(path, { method: 'POST', body: JSON.stringify({ ...payload, keys: keys.slice(i, i + 10), batch }) }); }
     catch (err) { results = keys.slice(i, i + 10).map((key) => ({ key, ok: false, error: err.message })); }
@@ -2236,10 +2262,11 @@ async function runMany(path, payload, tell, verb = t('geändert')) {
   if (bad.length) text += t(' {0} nicht: {1}', [number(bad.length), [...new Set(bad.map(explain))].join(' ')]);
   tell(text, bad.length > 0);
   loadTree();
-  await reload(true);
+  try { await reload(true); } finally { if (busy) busy.close(); }
   markSelection();
   return bad.length === 0;
 }
+$('busy').addEventListener('cancel', (event) => event.preventDefault());      // Esc does not stop the work, so it must not hide it
 
 async function turnSelected(degrees) {
   for (const id of ['sel-left', 'sel-right', 'sel-edit']) $(id).disabled = true;
@@ -2254,7 +2281,20 @@ const batchFields = () => {
   $('b-date').hidden = $('b-date-mode').value !== 'set';
   $('b-place-row').hidden = $('b-place-mode').value !== 'set';
 };
-$('b-date-mode').addEventListener('change', batchFields);
+// A half-typed date is no date to the browser, and it will not say which part
+// is missing. So the field starts with the first chosen picture's date,
+// whole, and every part can be typed over.
+async function batchDate() {
+  if ($('b-date-mode').value !== 'set' || $('b-date').value) return;
+  const now = new Date();
+  let start = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+  try {
+    const first = await api(`photos/${[...State.selected][0]}`);
+    if (first && first.taken) start = first.taken.slice(0, 19);
+  } catch (err) { /* today will do */ }
+  if (!$('b-date').value) $('b-date').value = start;
+}
+$('b-date-mode').addEventListener('change', () => { batchFields(); batchDate(); });
 $('b-place-mode').addEventListener('change', batchFields);
 $('sel-edit').addEventListener('click', () => {
   $('batch-form').reset();
@@ -2290,10 +2330,11 @@ $('batch-form').addEventListener('submit', async (event) => {
   if (words($('b-album-add').value).length) change.add_albums = words($('b-album-add').value);
   if (words($('b-album-remove').value).length) change.remove_albums = words($('b-album-remove').value);
   if ($('b-rating').value !== '') change.rating = Number($('b-rating').value);
+  if ($('b-creator').value.trim()) change.creator = $('b-creator').value.trim();
   if (!Object.keys(change).length) { message(msg, t('Es ist nichts zum Ändern angegeben.'), true); return; }
   $('batch-go').disabled = true;
   const fine = await runMany('edit', { change }, (text, isBad) => message(msg, text, isBad));
-  if (fine) { message($('sel-msg'), msg.textContent); $('batch').close(); }
+  if (fine) { message($('sel-msg'), msg.textContent); $('batch').close(); if (change.creator) loadCreators(); }
   else $('batch-go').disabled = false;
 });
 
@@ -2622,7 +2663,7 @@ async function folderToAlbum(folder) {
 // ----------------------------------------------------------------- what runs in the background
 
 let jobsTimer = 0;
-const JOB_NAMES = { album: t('Ordner als Album merken'), immich: t('Personen aus Immich übernehmen'), person: t('Person umbenennen'), dupes: t('Kopien auflösen'), aicheck: t('KI prüft Gesichter') };
+const JOB_NAMES = { album: t('Ordner als Album merken'), immich: t('Personen aus Immich übernehmen'), person: t('Person umbenennen'), dupes: t('Kopien auflösen'), aicheck: t('KI prüft Gesichter'), aistock: t('KI beschreibt den Bestand') };
 const ago = (ts) => (ts ? new Date(ts * 1000).toLocaleString(LOCALE, { dateStyle: 'short', timeStyle: 'short' }) : t('noch nie'));
 function bar(id, done, total, show) {
   const node = $(id);
@@ -2736,7 +2777,36 @@ function promptRow(prompt, isDefault) {
   return row;
 }
 
+// the pictures that are there already: how many wait, what it costs, and the button
+async function showStock() {
+  if (!State.me.is_admin) return;
+  let stock;
+  try { stock = await api(`ai/stock?model=${encodeURIComponent($('stock-model').value)}`, { quiet: true }); } catch { return; }
+  const select = $('stock-model');
+  if (!select.children.length && stock.models.length) {
+    select.replaceChildren(...stock.models.map((m) => el('option', { value: m.id }, m.label)));
+    select.hidden = false;
+  }
+  if (stock.models.length) select.value = stock.model;
+  $('stock-text').textContent = !stock.enabled ? t('Die KI ist ausgeschaltet.')
+    : !stock.waiting ? t('Jedes Bild hat Schlagworte.')
+      : t('{0} Bilder haben noch keine Schlagworte.', [number(stock.waiting)])
+        + (stock.cost === null ? '' : t(' Das kostet mit diesem Modell etwa {0} USD.', [stock.cost.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })]));
+  $('stock-go').disabled = !stock.enabled || !stock.waiting;
+}
+$('stock-model').addEventListener('change', showStock);
+$('stock-go').addEventListener('click', async () => {
+  const msg = $('stock-msg');
+  if (!window.confirm(t('Die KI schreibt Schlagworte und Beschreibung selbst in die Bilder. Jetzt starten?'))) return;
+  try {
+    const started = await api('ai/stock', { method: 'POST', body: JSON.stringify({ model: $('stock-model').value || null }) });
+    message(msg, t('{0} Bilder sind an der Reihe. Wie weit der Lauf ist, steht unter „Aufträge“.', [number(started.total)]));
+    $('stock-go').disabled = true;
+  } catch (err) { message(msg, explain(err.message), true); }
+});
+
 function showAI(config) {
+  showStock();
   $('ai-enabled').checked = config.enabled;
   $('ai-memories').checked = Boolean(config.memories);
   $('ai-inbox-auto').checked = Boolean(config.inbox_auto);
@@ -3789,6 +3859,7 @@ function describe(entry) {
   if ('taken' in after) parts.push(t('Datum: {0} → {1}', [before.taken_src === 'exif' ? shortDate(before.taken) : t('keins im Bild'), shortDate(after.taken)]));
   if ('lat' in after) parts.push(t('Ort: {0} → {1}', [spot(before.lat, before.lon), spot(after.lat, after.lon)]));
   if ('description' in after) parts.push(t('Beschreibung: „{0}“ → „{1}“', [before.description || '', after.description]));
+  if ('creator' in after) parts.push(t('Fotograf: „{0}“ → „{1}“', [before.creator || '', after.creator]));
   if ('keywords' in after) parts.push(t('Schlagworte: {0} → {1}', [before.keywords.join(', ') || t('keine'), after.keywords.join(', ') || t('keine')]));
   if ('rating' in after) parts.push(t('Bewertung: {0} → {1}', [before.rating || 0, after.rating]));
   if ('digitized' in after) parts.push(t('Digitalisiert am: {0} → {1}', [before.digitized || t('leer'), after.digitized || t('leer')]));

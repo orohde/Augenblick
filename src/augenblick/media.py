@@ -23,12 +23,12 @@ except ImportError:  # pragma: no cover
 
 IMAGE_EXT = {"jpg", "jpeg", "png", "heic", "heif", "webp", "tif", "tiff", "gif", "dng"}
 RAW_EXT = ("dng",)      # the phone's raw files: shown through the finished picture they carry, never written to
-VIDEO_EXT = {"mov", "mp4", "m4v", "avi", "mts", "3gp"}
+VIDEO_EXT = {"mov", "mp4", "m4v", "avi", "mts", "3gp", "mpg", "mpeg"}
 MEDIA_TYPES = {
     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "heic": "image/heic", "heif": "image/heif",
     "webp": "image/webp", "tif": "image/tiff", "tiff": "image/tiff", "gif": "image/gif", "dng": "image/x-adobe-dng",
     "mov": "video/quicktime", "mp4": "video/mp4", "m4v": "video/mp4", "avi": "video/x-msvideo",
-    "mts": "video/mp2t", "3gp": "video/3gpp",
+    "mts": "video/mp2t", "3gp": "video/3gpp", "mpg": "video/mpeg", "mpeg": "video/mpeg",
 }
 THUMB_EDGE = 480
 PREVIEW_EDGE = 2048
@@ -110,6 +110,9 @@ def jpeg_trailer(data: bytes) -> bytes | None:
 
 
 HEIF_EXT = ("heic", "heif")
+# A HEIF file says how to turn its picture in a field of its own, as quarter turns anti-clockwise.
+# The phone repeats that in the Exif orientation; readers go by the field, so the two are kept alike.
+HEIF_ORIENTATION = {0: 1, 1: 8, 2: 3, 3: 6}
 _HEIF_META = (b"Exif", b"mime", b"uri ")       # items that describe the picture instead of being it
 
 
@@ -244,10 +247,12 @@ def heif_image_hash(data: bytes) -> str | None:
     return digest.hexdigest()
 
 
-def heif_turn(data: bytes) -> tuple[int, int] | None:
+def heif_turn(data: bytes, alone: bool = True) -> tuple[int, int] | None:
     """Where the turn of the main picture stands in a HEIF file and what it says: (place of the byte,
     quarter turns anti-clockwise). None if the file has no such field, more than one that differ in
-    what they belong to, or mirrors the picture as well – then turning it here is not safe."""
+    what they belong to, or mirrors the picture as well – then turning it here is not safe. Those who
+    only want to read how the main picture is turned ask with `alone=False`: other pictures in the
+    file (the depth map, the tiles) may then turn their own way."""
     parts = heif_parts(data)
     if not parts:
         return None
@@ -256,7 +261,7 @@ def heif_turn(data: bytes) -> tuple[int, int] | None:
     turns = [at for at in mine if kinds[at][0] == b"irot"]
     if len(turns) != 1 or any(kinds[at][0] == b"imir" for at in mine):
         return None
-    if sum(1 for prop in parts["props"] if prop[0] in (b"irot", b"imir")) != 1:
+    if alone and sum(1 for prop in parts["props"] if prop[0] in (b"irot", b"imir")) != 1:
         return None                 # other pictures in the file turn their own way
     _, body, end = kinds[turns[0]]
     if end - body != 1:
@@ -342,9 +347,11 @@ def _degrees(value, ref) -> float | None:
 _XMP_LIST = re.compile(rb"<dc:subject>.*?</dc:subject>", re.S)
 _XMP_LI = re.compile(rb"<rdf:li[^>]*>(.*?)</rdf:li>", re.S)
 _XMP_DESC = re.compile(rb"<dc:description>.*?<rdf:li[^>]*>(.*?)</rdf:li>", re.S)
+_XMP_CREATOR = re.compile(rb"<dc:creator>.*?<rdf:li[^>]*>(.*?)</rdf:li>", re.S)
 _XMP_TREE = re.compile(rb"<lr:hierarchicalSubject>.*?</lr:hierarchicalSubject>", re.S)
 ALBUM_ROOT = "Album"        # albums are hierarchical keywords below this one: Album|Urlaub|USA 2010
 _XMP_RATING = re.compile(rb"xmp:Rating(?:=\"|>)(-?\d)")
+_XMP_APPLIED = (re.compile(rb"stDim:w(?:=\"|>)(\d+)"), re.compile(rb"stDim:h(?:=\"|>)(\d+)"))
 # a picture worked on here says which picture it was made from, and how
 SOURCE_MARK = "augenblick:"
 _XMP_SOURCE = re.compile(rb"stRef:documentID(?:=\"|>)augenblick:([0-9a-f]{64})")
@@ -379,6 +386,11 @@ def is_face(kind) -> bool:
 
 
 def clean_name(name) -> str:
+    return " ".join(str(name or "").replace("\x00", "").split())[:100]
+
+
+def clean_creator(name) -> str:
+    """Who took the picture, as one line."""
     return " ".join(str(name or "").replace("\x00", "").split())[:100]
 
 
@@ -461,12 +473,18 @@ def read_xmp(packet: bytes | str | None) -> dict:
     description = _XMP_DESC.search(packet)
     if description:
         found["description"] = _unescape(description.group(1))
+    creator = _XMP_CREATOR.search(packet)
+    if creator:
+        found["creator"] = clean_creator(_unescape(creator.group(1)))
     rating = _XMP_RATING.search(packet)
     if rating:
         found["rating"] = int(rating.group(1))
     regions = read_regions(packet)
     if regions:
         found["regions"] = regions
+        size = [pattern.search(packet) for pattern in _XMP_APPLIED]
+        if all(size):
+            found["applied"] = (int(size[0].group(1)), int(size[1].group(1)))
     source = _XMP_SOURCE.search(packet)
     if source:
         found["source"] = source.group(1).decode()
@@ -493,6 +511,7 @@ def read_image(data: bytes) -> tuple[Image.Image, dict]:
         meta["make"] = _text(exif.get(0x010F))
         meta["model"] = _text(exif.get(0x0110))
         meta["description"] = _text(exif.get(0x010E))
+        meta["creator"] = clean_creator(_text(exif.get(0x013B)))
         try:
             sub = exif.get_ifd(0x8769)
             gps = exif.get_ifd(0x8825)
@@ -509,10 +528,29 @@ def read_image(data: bytes) -> tuple[Image.Image, dict]:
     xmp = read_xmp(image.info.get("xmp") or image.info.get("XML:com.adobe.xmp"))
     if xmp.get("description") and not meta.get("description"):
         meta["description"] = xmp["description"]
+    if xmp.get("creator") and not meta.get("creator"):
+        meta["creator"] = xmp["creator"]
     meta["keywords"] = xmp.get("keywords", [])
     meta["albums"] = xmp.get("albums", [])
     meta["rating"] = xmp.get("rating", 0)
     meta["regions"] = xmp.get("regions", [])
+    wide, high = xmp.get("applied") or (0, 0)
+    if wide and high and image.width and image.height:
+        # The regions say for which picture they were marked. A picture of another shape was cut from
+        # that one by a programme that copied the marks along without moving them: they point nowhere.
+        # A name among them is still kept – it is not for us to drop who somebody said is in the picture.
+        shape, was = image.width / image.height, wide / high
+        if min(abs(shape / was - 1), abs(shape * was - 1)) > 0.03:
+            meta["regions"] = [region for region in meta["regions"] if region["name"]]
+    if meta["regions"] and image.format in ("HEIF", "AVIF"):
+        # Marked regions lie in the picture as it is stored – in a HEIF file that is the picture before
+        # its turn field is applied (the phone writes the faces it saw that way). What the decoder hands
+        # out, and all that is shown and found here, is the turned picture: so the regions are turned too.
+        turn = heif_turn(data, alone=False)
+        if turn and turn[1]:
+            meta["regions"] = [dict(region, **dict(zip("xywh", turn_box(
+                (region["x"], region["y"], region["w"], region["h"]), HEIF_ORIENTATION[turn[1]]))))
+                for region in meta["regions"]]
     meta["source"] = xmp.get("source", "")
     meta["recipe"] = xmp.get("recipe", {})
     meta["people"] = people_of(meta["regions"])
@@ -763,7 +801,7 @@ def examine(root: Path, rel: str, thumbs: Path) -> dict:
         "path": rel, "name": name, "ext": ext, "kind": kind, "size": stat.st_size, "mtime": stat.st_mtime,
         "width": 0, "height": 0, "orientation": 1, "lat": None, "lon": None, "make": "", "model": "",
         "description": "", "keywords": [], "albums": [], "rating": 0, "taken": None, "error": "",
-        "regions": [], "people": [], "live": "", "seconds": 0, "source": "", "recipe": {},
+        "regions": [], "people": [], "live": "", "seconds": 0, "source": "", "recipe": {}, "creator": "",
     }
     if kind == "image":
         data = path.read_bytes()
