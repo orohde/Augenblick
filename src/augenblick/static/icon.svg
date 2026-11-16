@@ -1,6 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0a6ed1"/>
-  <path d="M8 32c6-11 14.5-16 24-16s18 5 24 16c-6 11-14.5 16-24 16S14 43 8 32z" fill="#fff"/>
-  <circle cx="32" cy="32" r="10.5" fill="#0a6ed1"/>
-  <circle cx="32" cy="32" r="4.5" fill="#fff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 130">
+  <title>Augenblick!</title>
+  <rect width="130" height="130" rx="28" fill="#0a2a5c"/>
+  <g stroke="#0a2a5c" stroke-width="3">
+    <rect x="28" y="46" width="58" height="50" rx="6" fill="#2b5fa8" transform="translate(-9 -15) rotate(-16 57 71)"/>
+    <rect x="28" y="46" width="58" height="50" rx="6" fill="#0070f2" transform="translate(-5 -8) rotate(-8 57 71)"/>
+    <rect x="28" y="46" width="58" height="50" rx="6" fill="#4da3ff"/>
+  </g>
+  <path d="M34 91L50 68L60 81L67 74L80 91Z" fill="#0a2a5c"/>
+  <circle cx="72" cy="60" r="5" fill="#0a2a5c"/>
+  <rect x="96" y="28" width="12" height="56" rx="6" fill="#ffb020"/>
+  <circle cx="102" cy="97" r="7" fill="#ffb020"/>
 </svg>
