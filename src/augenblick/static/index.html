@@ -196,197 +196,223 @@
       <nav class="settings-nav" aria-label="Einstellungen">
         <a href="#/" class="settings-back">← Zurück zu den Bildern</a>
         <h2 class="fd-title fd-title--h4">Einstellungen</h2>
+        <a class="set-link" href="#/einstellungen/allgemein" data-pane="allgemein">Allgemein</a>
         <a class="set-link" href="#/einstellungen/konto" data-pane="konto">Mein Konto</a>
-        <a class="set-link admin-only" href="#/einstellungen/benutzer" data-pane="benutzer" data-i18n="Benutzer (mehrere)">Benutzer</a>
+        <a class="set-link" href="#/einstellungen/ablage" data-pane="ablage">Ablage</a>
         <a class="set-link admin-only" href="#/einstellungen/ordnen" data-pane="ordnen">Ordnen</a>
         <a class="set-link admin-only" href="#/einstellungen/personen" data-pane="personen">Personen</a>
-        <a class="set-link admin-only" href="#/einstellungen/ki" data-pane="ki">KI</a>
-        <a class="set-link admin-only" href="#/einstellungen/sicherheit" data-pane="sicherheit">Sicherheit</a>
-        <a class="set-link admin-only" href="#/einstellungen/api" data-pane="api">API</a>
-        <a class="set-link" href="#/einstellungen/papierkorb" data-pane="papierkorb">Papierkorb</a>
         <a class="set-link" href="#/einstellungen/aenderungen" data-pane="aenderungen">Änderungen</a>
         <a class="set-link" href="#/einstellungen/auftraege" data-pane="auftraege">Aufträge</a>
+        <a class="set-link admin-only" href="#/einstellungen/benutzer" data-pane="benutzer" data-i18n="Benutzer (mehrere)">Benutzer</a>
+        <a class="set-link admin-only" href="#/einstellungen/ki" data-pane="ki">KI</a>
+        <a class="set-link admin-only" href="#/einstellungen/verbindungen" data-pane="verbindungen">Verbindungen</a>
+        <a class="set-link admin-only" href="#/einstellungen/sicherheit" data-pane="sicherheit">Sicherheit</a>
         <a class="set-link" href="#/einstellungen/system" data-pane="system">System</a>
+        <a class="set-link" href="#/einstellungen/ueber" data-pane="ueber">Über</a>
       </nav>
       <div class="settings-body">
 
-        <section class="set-pane" data-pane="konto">
-          <h3 class="fd-title fd-title--h4">Mein Konto</h3>
-          <p id="me-line" class="set-hint"></p>
-          <div class="form-grid card acc-lang">
-            <label class="fd-form-label" for="acc-lang">Sprache</label>
-            <div>
-              <select id="acc-lang" class="fd-input" translate="no">
-                <option value="de">Deutsch</option>
-                <option value="en">English</option>
-                <option value="fr">Français</option>
-                <option value="it">Italiano</option>
-              </select>
-              <div class="field-hint">Gilt für dieses Konto auf allen Geräten.</div>
+        <!-- ---------------------------------------------------------------- Allgemein -->
+        <section class="set-pane" data-pane="allgemein">
+          <h3 class="fd-title fd-title--h4">Allgemein</h3>
+          <div class="card">
+            <div class="set-row">
+              <label class="fd-form-label" for="acc-lang">Sprache</label>
+              <div class="set-field">
+                <select id="acc-lang" class="fd-input set-select" translate="no">
+                  <option value="de">Deutsch</option>
+                  <option value="en">English</option>
+                  <option value="fr">Français</option>
+                  <option value="it">Italiano</option>
+                </select>
+              </div>
+              <p class="set-hint">Gilt für dieses Konto auf allen Geräten.</p>
+            </div>
+            <div class="set-row">
+              <label class="fd-form-label" for="set-theme">Farbschema</label>
+              <div class="set-field">
+                <select id="set-theme" class="fd-input set-select">
+                  <option value="system">Auto (wie das System)</option>
+                  <option value="light">Hell</option>
+                  <option value="dark">Dunkel</option>
+                </select>
+              </div>
+              <p class="set-hint">Gilt für diesen Browser. Der Knopf oben in der Leiste schaltet ebenfalls um.</p>
             </div>
           </div>
-          <form id="pw-form" class="form-grid card">
-            <label class="fd-form-label" for="pw-old">Aktuelles Passwort</label>
-            <input class="fd-input" id="pw-old" type="password" autocomplete="current-password" required>
-            <label class="fd-form-label" for="pw-new">Neues Passwort</label>
-            <input class="fd-input" id="pw-new" type="password" autocomplete="new-password" minlength="12" required>
-            <label class="fd-form-label" for="pw-new2">Neues Passwort wiederholen</label>
-            <input class="fd-input" id="pw-new2" type="password" autocomplete="new-password" minlength="12" required>
-            <span></span>
-            <div><button class="fd-button fd-button--emphasized" type="submit">Passwort ändern</button>
-              <span id="pw-msg" class="form-msg"></span></div>
-          </form>
-          <div id="mfa-card" class="card mfa-card">
-            <h4 class="fd-title fd-title--h5 card-title">Zweiter Faktor</h4>
-            <p id="mfa-state" class="set-hint"></p>
-            <form id="mfa-start" class="form-grid" hidden>
-              <label class="fd-form-label" for="mfa-pass">Aktuelles Passwort</label>
-              <input class="fd-input" id="mfa-pass" type="password" autocomplete="current-password" required>
-              <span></span>
-              <div><button class="fd-button fd-button--emphasized" type="submit">Einrichten</button>
-                <span id="mfa-msg-start" class="form-msg"></span></div>
+        </section>
+
+        <!-- ---------------------------------------------------------------- Mein Konto -->
+        <section class="set-pane" data-pane="konto" hidden>
+          <h3 class="fd-title fd-title--h4">Mein Konto</h3>
+          <p id="me-line" class="set-intro"></p>
+          <div class="card">
+            <h4 class="fd-title fd-title--h5 set-subtitle">Passwort</h4>
+            <form id="pw-form">
+              <div class="set-row">
+                <label class="fd-form-label" for="pw-old">Aktuelles Passwort</label>
+                <div class="set-field"><input class="fd-input set-wide" id="pw-old" type="password" autocomplete="current-password" required></div>
+              </div>
+              <div class="set-row">
+                <label class="fd-form-label" for="pw-new">Neues Passwort</label>
+                <div class="set-field"><input class="fd-input set-wide" id="pw-new" type="password" autocomplete="new-password" minlength="12" required></div>
+              </div>
+              <div class="set-row">
+                <label class="fd-form-label" for="pw-new2">Neues Passwort wiederholen</label>
+                <div class="set-field"><input class="fd-input set-wide" id="pw-new2" type="password" autocomplete="new-password" minlength="12" required></div>
+                <p class="set-hint">Mindestens zwölf Zeichen. Andere Geräte werden danach abgemeldet.</p>
+              </div>
+              <div class="set-actions">
+                <button class="fd-button fd-button--emphasized" type="submit">Passwort ändern</button>
+                <span id="pw-msg" class="form-msg"></span>
+              </div>
             </form>
-            <div id="mfa-setup" hidden>
-              <p class="set-hint">Scanne den Code mit einer Authenticator-App (zum Beispiel Bitwarden, 2FAS, Aegis oder Google Authenticator) und gib dann die sechs Ziffern ein, die sie anzeigt.</p>
-              <div class="mfa-qr"><img id="mfa-qr" alt="QR-Code"></div>
-              <p class="field-hint">Oder von Hand eingeben: <code id="mfa-secret" class="mfa-secret"></code></p>
-              <form id="mfa-confirm" class="form-grid">
-                <label class="fd-form-label" for="mfa-code">Code aus der App</label>
-                <input class="fd-input" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
-                <span></span>
-                <div><button class="fd-button fd-button--emphasized" type="submit">Einschalten</button>
-                  <button id="mfa-abort" class="fd-button fd-button--transparent" type="button">Abbrechen</button>
-                  <span id="mfa-msg-confirm" class="form-msg"></span></div>
+
+            <div id="mfa-card" class="set-sub mfa-card">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Zweiter Faktor</h4>
+              <p id="mfa-state" class="set-intro"></p>
+              <form id="mfa-start" hidden>
+                <div class="set-row">
+                  <label class="fd-form-label" for="mfa-pass">Aktuelles Passwort</label>
+                  <div class="set-field"><input class="fd-input set-wide" id="mfa-pass" type="password" autocomplete="current-password" required></div>
+                </div>
+                <div class="set-actions">
+                  <button class="fd-button fd-button--emphasized" type="submit">Einrichten</button>
+                  <span id="mfa-msg-start" class="form-msg"></span>
+                </div>
               </form>
-            </div>
-            <div id="mfa-codes" hidden>
-              <p class="set-hint">Deine Wiederherstellungscodes. Mit jedem kommst du einmal hinein, falls das Telefon weg ist. Lege sie jetzt sicher ab, zum Beispiel im Passwortmanager. Augenblick! zeigt sie nicht noch einmal.</p>
-              <pre id="mfa-code-list" class="mfa-code-list"></pre>
-              <div class="form-actions">
-                <span id="mfa-msg-codes" class="form-msg"></span>
-                <button id="mfa-copy" class="fd-button" type="button">Kopieren</button>
-                <button id="mfa-done" class="fd-button fd-button--emphasized" type="button">Ich habe sie gesichert</button>
+              <div id="mfa-setup" hidden>
+                <p class="set-intro">Scanne den Code mit einer Authenticator-App (zum Beispiel Bitwarden, 2FAS, Aegis oder Google Authenticator) und gib dann die sechs Ziffern ein, die sie anzeigt.</p>
+                <div class="mfa-qr"><img id="mfa-qr" alt="QR-Code"></div>
+                <p class="field-hint">Oder von Hand eingeben: <code id="mfa-secret" class="mfa-secret"></code></p>
+                <form id="mfa-confirm">
+                  <div class="set-row">
+                    <label class="fd-form-label" for="mfa-code">Code aus der App</label>
+                    <div class="set-field"><input class="fd-input set-num" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required></div>
+                  </div>
+                  <div class="set-actions">
+                    <button class="fd-button fd-button--emphasized" type="submit">Einschalten</button>
+                    <button id="mfa-abort" class="fd-button fd-button--transparent" type="button">Abbrechen</button>
+                    <span id="mfa-msg-confirm" class="form-msg"></span>
+                  </div>
+                </form>
+              </div>
+              <div id="mfa-codes" hidden>
+                <p class="set-intro">Deine Wiederherstellungscodes. Mit jedem kommst du einmal hinein, falls das Telefon weg ist. Lege sie jetzt sicher ab, zum Beispiel im Passwortmanager. Augenblick! zeigt sie nicht noch einmal.</p>
+                <pre id="mfa-code-list" class="mfa-code-list"></pre>
+                <div class="set-actions">
+                  <button id="mfa-copy" class="fd-button" type="button">Kopieren</button>
+                  <button id="mfa-done" class="fd-button fd-button--emphasized" type="button">Ich habe sie gesichert</button>
+                  <span id="mfa-msg-codes" class="form-msg"></span>
+                </div>
+              </div>
+              <div id="mfa-on" hidden>
+                <form id="mfa-renew">
+                  <div class="set-row">
+                    <label class="fd-form-label" for="mfa-renew-code">Code aus der App</label>
+                    <div class="set-field"><input class="fd-input set-num" id="mfa-renew-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required></div>
+                  </div>
+                  <div class="set-actions">
+                    <button class="fd-button" type="submit">Neue Wiederherstellungscodes</button>
+                    <span id="mfa-msg-renew" class="form-msg"></span>
+                  </div>
+                </form>
+                <details class="mfa-disable">
+                  <summary>Zweiten Faktor ausschalten</summary>
+                  <form id="mfa-off-form">
+                    <div class="set-row">
+                      <label class="fd-form-label" for="mfa-off-pass">Aktuelles Passwort</label>
+                      <div class="set-field"><input class="fd-input set-wide" id="mfa-off-pass" type="password" autocomplete="current-password" required></div>
+                    </div>
+                    <div class="set-row">
+                      <label class="fd-form-label" for="mfa-off-code">Code oder Wiederherstellungscode</label>
+                      <div class="set-field"><input class="fd-input set-wide" id="mfa-off-code" autocomplete="one-time-code" maxlength="20" required></div>
+                    </div>
+                    <div class="set-actions">
+                      <button class="fd-button fd-button--negative" type="submit">Ausschalten</button>
+                      <span id="mfa-msg-off" class="form-msg"></span>
+                    </div>
+                  </form>
+                </details>
               </div>
             </div>
-            <div id="mfa-on" hidden>
-              <form id="mfa-renew" class="form-grid">
-                <label class="fd-form-label" for="mfa-renew-code">Code aus der App</label>
-                <input class="fd-input" id="mfa-renew-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
-                <span></span>
-                <div><button class="fd-button" type="submit">Neue Wiederherstellungscodes</button>
-                  <span id="mfa-msg-renew" class="form-msg"></span></div>
-              </form>
-              <details class="mfa-disable">
-                <summary>Zweiten Faktor ausschalten</summary>
-                <form id="mfa-off-form" class="form-grid">
-                  <label class="fd-form-label" for="mfa-off-pass">Aktuelles Passwort</label>
-                  <input class="fd-input" id="mfa-off-pass" type="password" autocomplete="current-password" required>
-                  <label class="fd-form-label" for="mfa-off-code">Code oder Wiederherstellungscode</label>
-                  <input class="fd-input" id="mfa-off-code" autocomplete="one-time-code" maxlength="20" required>
-                  <span></span>
-                  <div><button class="fd-button fd-button--negative" type="submit">Ausschalten</button>
-                    <span id="mfa-msg-off" class="form-msg"></span></div>
-                </form>
-              </details>
+
+            <div class="set-sub">
+              <div class="pane-head">
+                <h4 class="fd-title fd-title--h5 set-subtitle">Angemeldete Geräte</h4>
+                <button id="ses-others" class="fd-button" type="button">Alle anderen abmelden</button>
+              </div>
+              <p id="ses-msg" class="form-msg ses-msg" role="status"></p>
+              <table class="fd-table ses-table"><tbody id="ses-rows" class="fd-table__body"></tbody></table>
             </div>
           </div>
+        </section>
+
+        <!-- ---------------------------------------------------------------- Ablage -->
+        <section class="set-pane" data-pane="ablage" hidden>
+          <h3 class="fd-title fd-title--h4">Ablage</h3>
           <div class="card">
-            <div class="pane-head">
-              <h4 class="fd-title fd-title--h5 card-title">Angemeldete Geräte</h4>
-              <button id="ses-others" class="fd-button" type="button">Alle anderen abmelden</button>
+            <h4 class="fd-title fd-title--h5 set-subtitle">Papierkorb</h4>
+            <p class="set-intro">Gelöschte Bilder wandern in den Papierkorb ihres Bereichs und lassen sich von dort zurückholen. Nach Ablauf der Frist verschwinden sie endgültig.</p>
+            <form id="trash-form" data-autosave>
+              <div class="set-row">
+                <label class="fd-form-label" for="trash-days">Aufbewahren (Tage)</label>
+                <div class="set-field inline"><input class="fd-input set-num" id="trash-days" type="number" min="0" max="3650" step="1" required> <span id="trash-set-msg" class="form-msg" role="status"></span></div>
+                <p class="set-hint">0 heißt: nichts verschwindet von selbst, erst beim Leeren.</p>
+              </div>
+            </form>
+            <div class="set-actions"><a class="fd-button" href="#/papierkorb">Papierkorb öffnen</a></div>
+
+            <div class="set-sub admin-only">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Bereiche</h4>
+              <p class="set-intro">Ein Bereich ist ein Ordner direkt unter dem Foto-Verzeichnis. Administratoren sehen alle Bereiche.</p>
+              <table class="fd-table">
+                <thead class="fd-table__header"><tr class="fd-table__row">
+                  <th class="fd-table__cell">Bereich</th>
+                  <th class="fd-table__cell">Bilder</th>
+                  <th class="fd-table__cell">Benutzer</th>
+                  <th class="fd-table__cell" title="Aus: keine Ortsnamen, und die Bilder stehen nicht unter „ohne Ort“">braucht Ort</th>
+                  <th class="fd-table__cell" title="Aus: die Bilder stehen nicht unter „ohne Aufnahmedatum“">braucht Datum</th>
+                  <th class="fd-table__cell"></th>
+                </tr></thead>
+                <tbody id="area-rows" class="fd-table__body"></tbody>
+              </table>
+              <form id="area-form" class="area-form">
+                <label class="fd-form-label" for="area-name">Neuer Bereich</label>
+                <input class="fd-input" id="area-name" autocomplete="off" maxlength="40" placeholder="z. B. Bildschirmfotos" required>
+                <label class="check"><input type="checkbox" id="area-places" checked> <span>braucht Ort</span></label>
+                <label class="check"><input type="checkbox" id="area-dates" checked> <span>braucht Datum</span></label>
+                <button class="fd-button" type="submit">Bereich anlegen</button>
+                <span id="area-msg" class="form-msg" role="status"></span>
+              </form>
+              <p class="field-hint">Ein neuer Bereich gehört zunächst niemandem; wer ihn sehen oder dort schreiben darf, stellst du unter „Benutzer“ beim jeweiligen Konto ein. Löschen geht nur, solange er leer ist.</p>
             </div>
-            <p id="ses-msg" class="form-msg ses-msg" role="status"></p>
-            <table class="fd-table ses-table"><tbody id="ses-rows" class="fd-table__body"></tbody></table>
           </div>
         </section>
 
-        <section class="set-pane" data-pane="benutzer" hidden>
-          <div class="pane-head">
-            <h3 class="fd-title fd-title--h4" data-i18n="Benutzer (mehrere)">Benutzer</h3>
-            <button id="usr-new" class="fd-button fd-button--emphasized" type="button">Neuer Benutzer</button>
-          </div>
-          <p class="set-hint">Ein Bereich ist ein Ordner direkt unter dem Foto-Verzeichnis. Administratoren sehen alle Bereiche.</p>
-          <table class="fd-table card">
-            <thead class="fd-table__header"><tr class="fd-table__row">
-              <th class="fd-table__cell">Bereich</th>
-              <th class="fd-table__cell">Bilder</th>
-              <th class="fd-table__cell">Benutzer</th>
-              <th class="fd-table__cell" title="Aus: keine Ortsnamen, und die Bilder stehen nicht unter „ohne Ort“">braucht Ort</th>
-              <th class="fd-table__cell" title="Aus: die Bilder stehen nicht unter „ohne Aufnahmedatum“">braucht Datum</th>
-              <th class="fd-table__cell"></th>
-            </tr></thead>
-            <tbody id="area-rows" class="fd-table__body"></tbody>
-          </table>
-          <form id="area-form" class="card area-form">
-            <label class="fd-form-label" for="area-name">Neuer Bereich</label>
-            <input class="fd-input" id="area-name" autocomplete="off" maxlength="40" placeholder="z. B. Bildschirmfotos" required>
-            <label class="check"><input type="checkbox" id="area-places" checked> <span>braucht Ort</span></label>
-            <label class="check"><input type="checkbox" id="area-dates" checked> <span>braucht Datum</span></label>
-            <button class="fd-button" type="submit">Bereich anlegen</button>
-            <span id="area-msg" class="form-msg" role="status"></span>
-          </form>
-          <p class="field-hint">Ein neuer Bereich gehört zunächst niemandem; wer ihn sehen oder dort schreiben darf, stellst du unten beim Benutzer ein. Löschen geht nur, solange er leer ist.</p>
-          <table class="fd-table card">
-            <thead class="fd-table__header"><tr class="fd-table__row">
-              <th class="fd-table__cell">Benutzer</th>
-              <th class="fd-table__cell">Rolle</th>
-              <th class="fd-table__cell">Bereiche</th>
-              <th class="fd-table__cell">Zweiter Faktor</th>
-              <th class="fd-table__cell"></th>
-            </tr></thead>
-            <tbody id="usr-rows" class="fd-table__body"></tbody>
-          </table>
-          <p id="usr-list-msg" class="form-msg" role="status"></p>
-          <form id="usr-form" class="card usr-form" hidden>
-            <h4 id="usr-form-title" class="fd-title fd-title--h5"></h4>
-            <div class="form-grid">
-              <label class="fd-form-label" for="usr-name">Benutzer</label>
-              <input class="fd-input" id="usr-name" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="[a-z0-9][a-z0-9._-]{0,31}" required>
-              <label class="fd-form-label" for="usr-display">Anzeigename</label>
-              <input class="fd-input" id="usr-display" autocomplete="off">
-              <label class="fd-form-label" for="usr-pass">Passwort</label>
-              <input class="fd-input" id="usr-pass" type="password" autocomplete="new-password" minlength="12">
-              <span></span>
-              <label class="check"><input type="checkbox" id="usr-admin"> <span>Administrator (sieht alle Bereiche, darf Einstellungen ändern)</span></label>
-              <span class="fd-form-label">Bereiche</span>
-              <div id="usr-areas" class="area-perms"></div>
-              <span class="usr-existing"></span>
-              <label class="check usr-existing"><input type="checkbox" id="usr-signout"> <span>Auf allen Geräten abmelden</span></label>
-              <span class="usr-mfa-reset"></span>
-              <label class="check usr-mfa-reset"><input type="checkbox" id="usr-reset-totp"> <span>Zweiten Faktor zurücksetzen (wenn das Telefon verloren ist)</span></label>
-            </div>
-            <div class="form-actions">
-              <span id="usr-msg" class="form-msg"></span>
-              <button id="usr-cancel" class="fd-button" type="button">Abbrechen</button>
-              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
-            </div>
-          </form>
-        </section>
-
+        <!-- ---------------------------------------------------------------- Ordnen -->
         <section class="set-pane" data-pane="ordnen" hidden>
           <h3 class="fd-title fd-title--h4">Ordnen</h3>
-          <p class="set-hint">Regeln sagen, in welchen Ordner ein Bild gehört und wie die Datei heißt. Ohne Regel fasst Augenblick! nichts an. Einsortiert werden nur Bilder mit Aufnahmedatum; nie wird etwas überschrieben, und jedes Verschieben steht bei den Änderungen und lässt sich zurücknehmen.</p>
-          <form id="sort-form" autocomplete="off">
-            <div class="card">
-              <div class="pane-head">
-                <h4 class="fd-title fd-title--h5 card-title">Regeln</h4>
-                <span class="inline">
-                  <select id="sort-preset" class="fd-input" aria-label="Vorlage">
-                    <option value="">Vorlage …</option>
-                    <option value="{Jahr}|{JJJJMMTT}_{HHMMSS}">Jahr, Datei nach Datum benannt</option>
-                    <option value="{Jahr}/{Monat}|{JJJJMMTT}_{HHMMSS}">Jahr/Monat, Datei nach Datum benannt</option>
-                    <option value="{Jahr}|">Jahr, Name bleibt</option>
-                    <option value="|{JJJJMMTT}_{HHMMSS}">Ordner bleibt, Datei nach Datum benannt</option>
-                    <option value="|">Nichts anfassen (Ausnahme)</option>
-                  </select>
-                  <button id="sort-add" class="fd-button" type="button">Neue Regel</button>
-                </span>
-              </div>
-              <p class="field-hint">Die genauere Regel gewinnt: Eine Regel für „Familie/Boote“ geht der für „Familie“ vor. Leeres Feld heißt: bleibt, wie es ist. Bausteine: <code id="sort-blocks"></code></p>
-              <div id="sort-rules" class="sort-rules"></div>
+          <p class="set-intro">Regeln sagen, in welchen Ordner ein Bild gehört und wie die Datei heißt. Ohne Regel fasst Augenblick! nichts an. Einsortiert werden nur Bilder mit Aufnahmedatum; nie wird etwas überschrieben, und jedes Verschieben steht bei den Änderungen und lässt sich zurücknehmen.</p>
+          <form id="sort-form" class="card" autocomplete="off">
+            <div class="pane-head">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Regeln</h4>
+              <span class="inline">
+                <select id="sort-preset" class="fd-input" aria-label="Vorlage">
+                  <option value="">Vorlage …</option>
+                  <option value="{Jahr}|{JJJJMMTT}_{HHMMSS}">Jahr, Datei nach Datum benannt</option>
+                  <option value="{Jahr}/{Monat}|{JJJJMMTT}_{HHMMSS}">Jahr/Monat, Datei nach Datum benannt</option>
+                  <option value="{Jahr}|">Jahr, Name bleibt</option>
+                  <option value="|{JJJJMMTT}_{HHMMSS}">Ordner bleibt, Datei nach Datum benannt</option>
+                  <option value="|">Nichts anfassen (Ausnahme)</option>
+                </select>
+                <button id="sort-add" class="fd-button" type="button">Neue Regel</button>
+              </span>
             </div>
-            <div class="card">
-              <h4 class="fd-title fd-title--h5 card-title">Nach einer Datumsänderung</h4>
+            <p class="field-hint">Die genauere Regel gewinnt: Eine Regel für „Familie/Boote“ geht der für „Familie“ vor. Leeres Feld heißt: bleibt, wie es ist. Bausteine: <code id="sort-blocks"></code></p>
+            <div id="sort-rules" class="sort-rules"></div>
+            <div class="set-sub">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Nach einer Datumsänderung</h4>
               <p class="field-hint">Was passieren soll, wenn ein Bild nach dem Ändern des Datums nicht mehr an seinen Platz passt.</p>
               <div id="sort-modes" class="area-perms"></div>
             </div>
@@ -400,7 +426,7 @@
           <div id="sort-moves" class="card sort-moves" hidden></div>
           <form id="spot-form" class="card" autocomplete="off">
             <div class="pane-head">
-              <h4 class="fd-title fd-title--h5 card-title">Feste Orte</h4>
+              <h4 class="fd-title fd-title--h5 set-subtitle">Feste Orte</h4>
               <button id="spot-add" class="fd-button" type="button">Neuer Ort</button>
             </div>
             <p class="field-hint">Orte, die immer wieder vorkommen – Zuhause, die Eltern, die Ferienwohnung. Beim Ändern eines Bildes oder mehrerer Bilder stehen sie zur Auswahl, und die KI erkennt sie wieder, wenn sie einen Ort vorschlägt. Ins Bild geschrieben werden nur die Koordinaten.</p>
@@ -412,119 +438,244 @@
           </form>
         </section>
 
+        <!-- ---------------------------------------------------------------- Personen -->
         <section class="set-pane" data-pane="personen" hidden>
           <h3 class="fd-title fd-title--h4">Personen</h3>
-          <p class="set-hint">Augenblick! kann in den Bildern Gesichter finden und ähnliche zusammenstellen. Das geschieht auf diesem Rechner; kein Bild geht nach außen. Die Suche läuft langsam im Hintergrund, liest nur und macht nach einem Neustart dort weiter, wo sie war. Ins Bild geschrieben wird ein Name erst, wenn du ihn bestätigst – als Markierung, die auch andere Programme lesen (XMP-Region).</p>
-          <form id="faces-form" class="card">
-            <p><strong>Gesichter suchen in diesen Bereichen</strong></p>
-            <div id="faces-areas" class="faces-areas"></div>
-            <p class="field-hint">Wird ein Bereich abgeschaltet, vergisst Augenblick!, was es dort gefunden hat. Namen, die schon in den Bildern stehen, bleiben.</p>
-            <p id="faces-state" class="field-hint"></p>
-            <p id="faces-ignored" class="field-hint" hidden><span></span> <button id="faces-restore" class="fd-button fd-button--compact" type="button">Alle zurückholen</button></p>
-            <p class="field-hint">Was dabei entsteht (wo Gesichter sind und wie sie aussehen), liegt in einer eigenen Datei neben dem Index und lässt sich jederzeit neu berechnen. Die beiden Modelle stammen aus dem OpenCV Zoo: YuNet findet Gesichter (MIT-Lizenz), SFace vergleicht sie (Apache 2.0).</p>
-            <div class="form-actions">
-              <span id="faces-set-msg" class="form-msg" role="status"></span>
-              <a class="fd-button" href="#/gesichter">Unbenannte Gesichter ansehen</a>
-              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
-            </div>
-          </form>
-          <form id="immich-form" class="card" autocomplete="off" data-bwignore="true">
-            <h4 class="fd-title fd-title--h5 card-title">Personen aus Immich übernehmen</h4>
-            <p class="set-hint">Einmalig: Augenblick! fragt Immich, wen es mit Namen kennt und auf welchen Bildern, sucht dieselben Bilder hier und schreibt die Namen als Markierung in die Dateien. In Immich wird nichts geändert. Erst kommt eine Vorschau; geschrieben wird nach deiner Bestätigung, und jedes Bild lässt sich unter Änderungen zurücknehmen. Adresse und Schlüssel werden nicht gespeichert. Der Schlüssel braucht in Immich die Rechte, Personen, Gesichter und Bilder zu lesen.</p>
-            <div class="form-grid">
-              <label class="fd-form-label" for="immich-url">Adresse von Immich</label>
-              <input class="fd-input" id="immich-url" placeholder="http://192.168.1.10:2283" spellcheck="false" autocapitalize="off" required>
-              <label class="fd-form-label" for="immich-key">API-Schlüssel</label>
-              <input class="fd-input" id="immich-key" type="password" autocomplete="off" required>
-            </div>
-            <div class="form-actions">
-              <span id="immich-msg" class="form-msg" role="status"></span>
-              <button class="fd-button fd-button--emphasized" type="submit">Vorschau</button>
-            </div>
-            <div id="immich-plan" hidden>
-              <table class="immich-table">
-                <thead><tr><th></th><th>Person</th><th>in Immich</th><th>hier gefunden</th><th>schon benannt</th><th>zu schreiben</th></tr></thead>
-                <tbody id="immich-people"></tbody>
-              </table>
-              <p id="immich-missed" class="field-hint"></p>
-              <div class="form-actions">
-                <button id="immich-go" class="fd-button fd-button--emphasized" type="button">Namen in die Bilder schreiben</button>
+          <p class="set-intro">Augenblick! kann in den Bildern Gesichter finden und ähnliche zusammenstellen. Das geschieht auf diesem Rechner; kein Bild geht nach außen. Die Suche läuft langsam im Hintergrund, liest nur und macht nach einem Neustart dort weiter, wo sie war. Ins Bild geschrieben wird ein Name erst, wenn du ihn bestätigst – als Markierung, die auch andere Programme lesen (XMP-Region).</p>
+          <div class="card">
+            <form id="faces-form">
+              <div class="set-row">
+                <span class="fd-form-label">Gesichter suchen in diesen Bereichen</span>
+                <div id="faces-areas" class="set-field faces-areas"></div>
+                <p class="set-hint">Wird ein Bereich abgeschaltet, vergisst Augenblick!, was es dort gefunden hat. Namen, die schon in den Bildern stehen, bleiben.</p>
               </div>
+              <p id="faces-state" class="field-hint"></p>
+              <p id="faces-ignored" class="field-hint" hidden><span></span> <button id="faces-restore" class="fd-button fd-button--compact" type="button">Alle zurückholen</button></p>
+              <p class="field-hint">Was dabei entsteht (wo Gesichter sind und wie sie aussehen), liegt in einer eigenen Datei neben dem Index und lässt sich jederzeit neu berechnen. Die beiden Modelle stammen aus dem OpenCV Zoo: YuNet findet Gesichter (MIT-Lizenz), SFace vergleicht sie (Apache 2.0).</p>
+              <div class="form-actions">
+                <span id="faces-set-msg" class="form-msg" role="status"></span>
+                <a class="fd-button" href="#/gesichter">Unbenannte Gesichter ansehen</a>
+                <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
+              </div>
+            </form>
+            <form id="immich-form" class="set-sub" autocomplete="off" data-bwignore="true">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Personen aus Immich übernehmen</h4>
+              <p class="set-intro">Einmalig: Augenblick! fragt Immich, wen es mit Namen kennt und auf welchen Bildern, sucht dieselben Bilder hier und schreibt die Namen als Markierung in die Dateien. In Immich wird nichts geändert. Erst kommt eine Vorschau; geschrieben wird nach deiner Bestätigung, und jedes Bild lässt sich unter Änderungen zurücknehmen. Adresse und Schlüssel werden nicht gespeichert. Der Schlüssel braucht in Immich die Rechte, Personen, Gesichter und Bilder zu lesen.</p>
+              <div class="set-row">
+                <label class="fd-form-label" for="immich-url">Adresse von Immich</label>
+                <div class="set-field"><input class="fd-input set-wide" id="immich-url" placeholder="http://192.168.1.10:2283" spellcheck="false" autocapitalize="off" required></div>
+              </div>
+              <div class="set-row">
+                <label class="fd-form-label" for="immich-key">API-Schlüssel</label>
+                <div class="set-field"><input class="fd-input set-wide" id="immich-key" type="password" autocomplete="off" required></div>
+              </div>
+              <div class="set-actions">
+                <button class="fd-button fd-button--emphasized" type="submit">Vorschau</button>
+                <span id="immich-msg" class="form-msg" role="status"></span>
+              </div>
+              <div id="immich-plan" hidden>
+                <table class="immich-table">
+                  <thead><tr><th></th><th>Person</th><th>in Immich</th><th>hier gefunden</th><th>schon benannt</th><th>zu schreiben</th></tr></thead>
+                  <tbody id="immich-people"></tbody>
+                </table>
+                <p id="immich-missed" class="field-hint"></p>
+                <div class="form-actions">
+                  <button id="immich-go" class="fd-button fd-button--emphasized" type="button">Namen in die Bilder schreiben</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- ---------------------------------------------------------------- Änderungen -->
+        <section class="set-pane" data-pane="aenderungen" hidden>
+          <h3 class="fd-title fd-title--h4">Änderungen</h3>
+          <p class="set-intro">Was in die Bilder geschrieben wurde, das Neueste zuerst. Zurücknehmen geht, solange das Bild seither nicht noch einmal geändert wurde.</p>
+          <div class="card">
+            <div id="journal"></div>
+            <span id="journal-msg" class="form-msg" role="status"></span>
+          </div>
+        </section>
+
+        <!-- ---------------------------------------------------------------- Aufträge -->
+        <section class="set-pane" data-pane="auftraege" hidden>
+          <h3 class="fd-title fd-title--h4">Aufträge</h3>
+          <p class="set-intro">Was Augenblick! im Hintergrund tut und wie weit es ist. Die Anzeige erneuert sich von selbst.</p>
+          <div class="card">
+            <div class="pane-head">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Ordner einlesen</h4>
+              <button id="job-scan" class="fd-button admin-only" type="button">Jetzt einlesen</button>
+            </div>
+            <p id="job-scan-text" class="job-text"></p>
+            <progress id="job-scan-bar" class="job-bar" max="1" value="0" hidden></progress>
+
+            <div class="set-sub">
+              <div class="pane-head">
+                <h4 class="fd-title fd-title--h5 set-subtitle">Gesichter suchen</h4>
+                <button id="job-faces" class="fd-button admin-only" type="button">Jetzt suchen</button>
+              </div>
+              <p id="job-faces-text" class="job-text"></p>
+              <progress id="job-faces-bar" class="job-bar" max="1" value="0" hidden></progress>
+              <p class="field-hint">Die Suche sieht sich jedes Bild einmal an. Ein Bild, das sich seither nur in seinen Angaben geändert hat (Name, Datum, Album), wird nicht noch einmal durchsucht – der Bildinhalt ist derselbe.</p>
+            </div>
+            <div class="set-sub">
+              <div class="pane-head">
+                <h4 class="fd-title fd-title--h5 set-subtitle">Duplikate suchen</h4>
+                <span class="inline"><a class="fd-button fd-button--transparent" href="#/duplikate">Duplikate ansehen</a>
+                  <button id="job-dupes" class="fd-button admin-only" type="button">Jetzt suchen</button></span>
+              </div>
+              <p id="job-dupes-text" class="job-text"></p>
+              <progress id="job-dupes-bar" class="job-bar" max="1" value="0" hidden></progress>
+              <p class="field-hint">Findet Bilder, die mehrfach da sind – auch in anderer Größe oder Qualität gespeichert. Die Suche liest nur; gelöscht wird erst, wenn du es auf der Seite „Duplikate“ sagst, und dann in den Papierkorb. Neue Bilder kommen nicht von selbst dazu: dafür noch einmal „Jetzt suchen“.</p>
+            </div>
+            <div class="set-sub">
+              <div class="pane-head">
+                <h4 class="fd-title fd-title--h5 set-subtitle">Großer Auftrag</h4>
+                <button id="job-stop" class="fd-button admin-only" type="button" hidden>Abbrechen</button>
+              </div>
+              <p id="job-long-text" class="job-text"></p>
+              <progress id="job-long-bar" class="job-bar" max="1" value="0" hidden></progress>
+              <p id="job-long-head" class="job-text" hidden></p>
+              <ul id="job-long-errors" class="job-errors"></ul>
+              <p class="inline"><button id="job-seen" class="fd-button fd-button--transparent admin-only" type="button" hidden>Gesehen, Liste ausblenden</button></p>
+              <p class="field-hint">Dazu gehören zum Beispiel „KI beschreibt den Bestand“, „Ordner als Album merken“, „Kopien auflösen“ und „Person umbenennen“. Es läuft immer nur einer. Übersprungene Bilder bleiben, wie sie waren – ein Klick auf den Namen öffnet das Bild. Ein Neustart von Augenblick! bricht den Auftrag ab; was bis dahin geschrieben wurde, bleibt. Nur „KI beschreibt den Bestand“ macht danach von selbst weiter.</p>
+            </div>
+            <p id="job-msg" class="form-msg" role="status"></p>
+          </div>
+        </section>
+
+        <!-- ---------------------------------------------------------------- Benutzer -->
+        <section class="set-pane" data-pane="benutzer" hidden>
+          <div class="pane-head">
+            <h3 class="fd-title fd-title--h4" data-i18n="Benutzer (mehrere)">Benutzer</h3>
+            <button id="usr-new" class="fd-button fd-button--emphasized" type="button">Neuer Benutzer</button>
+          </div>
+          <table class="fd-table card">
+            <thead class="fd-table__header"><tr class="fd-table__row">
+              <th class="fd-table__cell">Benutzer</th>
+              <th class="fd-table__cell">Rolle</th>
+              <th class="fd-table__cell">Bereiche</th>
+              <th class="fd-table__cell">Zweiter Faktor</th>
+              <th class="fd-table__cell"></th>
+            </tr></thead>
+            <tbody id="usr-rows" class="fd-table__body"></tbody>
+          </table>
+          <p id="usr-list-msg" class="form-msg" role="status"></p>
+          <form id="usr-form" class="card usr-form" hidden>
+            <h4 id="usr-form-title" class="fd-title fd-title--h5 set-subtitle"></h4>
+            <div class="set-row">
+              <label class="fd-form-label" for="usr-name">Benutzer</label>
+              <div class="set-field"><input class="fd-input set-wide" id="usr-name" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="[a-z0-9][a-z0-9._-]{0,31}" required></div>
+            </div>
+            <div class="set-row">
+              <label class="fd-form-label" for="usr-display">Anzeigename</label>
+              <div class="set-field"><input class="fd-input set-wide" id="usr-display" autocomplete="off"></div>
+            </div>
+            <div class="set-row">
+              <label class="fd-form-label" for="usr-pass">Passwort</label>
+              <div class="set-field"><input class="fd-input set-wide" id="usr-pass" type="password" autocomplete="new-password" minlength="12"></div>
+            </div>
+            <div class="set-row set-row--check">
+              <label class="fd-form-label" for="usr-admin">Administrator</label>
+              <div class="set-field"><input type="checkbox" id="usr-admin"></div>
+              <p class="set-hint">Sieht alle Bereiche und darf Einstellungen ändern.</p>
+            </div>
+            <div class="set-row">
+              <span class="fd-form-label">Bereiche</span>
+              <div id="usr-areas" class="set-field area-perms"></div>
+            </div>
+            <div class="set-row set-row--check usr-existing">
+              <label class="fd-form-label" for="usr-signout">Auf allen Geräten abmelden</label>
+              <div class="set-field"><input type="checkbox" id="usr-signout"></div>
+            </div>
+            <div class="set-row set-row--check usr-mfa-reset">
+              <label class="fd-form-label" for="usr-reset-totp">Zweiten Faktor zurücksetzen</label>
+              <div class="set-field"><input type="checkbox" id="usr-reset-totp"></div>
+              <p class="set-hint">Wenn das Telefon verloren ist. Das Konto richtet ihn danach neu ein.</p>
+            </div>
+            <div class="form-actions">
+              <span id="usr-msg" class="form-msg"></span>
+              <button id="usr-cancel" class="fd-button" type="button">Abbrechen</button>
+              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
             </div>
           </form>
         </section>
 
+        <!-- ---------------------------------------------------------------- KI -->
         <section class="set-pane" data-pane="ki" hidden>
           <h3 class="fd-title fd-title--h4">KI</h3>
-          <p class="set-hint">Eine KI kann sich ein Bild ansehen und Beschreibung, Schlagworte und – bei Bildern ohne Aufnahmedatum – ein Datum vorschlagen. Geschrieben wird nichts von selbst: Der Vorschlag landet im Bearbeiten-Formular, du entscheidest. Das Bild geht dafür verkleinert an den gewählten Anbieter.</p>
-          <div class="card mcp-card">
-            <h4 class="fd-title fd-title--h5 card-title">Zugang für KI-Assistenten (MCP)</h4>
-            <p class="field-hint">Über diesen Zugang kann ein KI-Assistent wie Claude in Augenblick! suchen, Bilder ansehen und – mit einem Schlüssel, der schreiben darf – Datum, Ort, Beschreibung, Schlagworte, Alben und Namen in die Bilder schreiben, Bilder verschieben oder in den Papierkorb legen. Jede Änderung steht unter Änderungen und lässt sich zurücknehmen; endgültig löschen kann der Assistent nichts.</p>
-            <div class="form-grid">
-              <span></span>
-              <label class="check"><input type="checkbox" id="mcp-on"> <span>MCP-Zugang einschalten</span></label>
-              <span class="fd-form-label">Adresse</span>
-              <code id="mcp-url" class="mcp-url"></code>
+          <p class="set-intro">Eine KI kann sich ein Bild ansehen und Beschreibung, Schlagworte und – bei Bildern ohne Aufnahmedatum – ein Datum vorschlagen. Geschrieben wird nichts von selbst: Der Vorschlag landet im Bearbeiten-Formular, du entscheidest. Das Bild geht dafür verkleinert an den gewählten Anbieter.</p>
+          <p class="set-intro">Den Zugang für KI-Assistenten (MCP) findest du unter <a class="fd-link" href="#/einstellungen/verbindungen">Verbindungen</a>.</p>
+          <form id="ai-form" class="card" autocomplete="off" data-bwignore="true" data-autosave>
+            <h4 class="fd-title fd-title--h5 set-subtitle">Anbieter</h4>
+            <div class="set-row set-row--check">
+              <label class="fd-form-label" for="ai-enabled">KI einschalten</label>
+              <div class="set-field"><input type="checkbox" id="ai-enabled"></div>
             </div>
-            <p class="field-hint">Der Assistent meldet sich mit einem API-Schlüssel an, nur lesend oder lesend und schreibend. <a class="fd-link" href="#/einstellungen/api">Zu den API-Schlüsseln</a></p>
-            <span id="mcp-msg" class="form-msg" role="status"></span>
-          </div>
-          <form id="ai-form" autocomplete="off" data-bwignore="true">
-            <div class="card">
-              <h4 class="fd-title fd-title--h5 card-title">Anbieter</h4>
-              <div class="form-grid">
-                <span></span>
-                <label class="check"><input type="checkbox" id="ai-enabled"> <span>KI einschalten</span></label>
-                <span></span>
-                <label class="check"><input type="checkbox" id="ai-memories"> <span>KI darf Erinnerungen benennen <span class="hint">– nur auf Knopfdruck je Erinnerung: Sie bekommt bis zu acht verkleinerte Bilder und schlägt Titel, einen Satz und das Titelbild vor.</span></span></label>
-                <span></span>
-                <label class="check"><input type="checkbox" id="ai-inbox-auto"> <span>Eingang: KI sieht sich neue Bilder von selbst an <span class="hint">– jedes Bild, das ankommt, einmal; Beschreibung und Schlagworte bleiben Vorschlag, bis du sie beim Einsortieren übernimmst. Kostet je Bild eine Anfrage.</span></span></label>
-                <label class="fd-form-label" for="ai-provider">Anbieter</label>
-                <select class="fd-input" id="ai-provider">
+            <div class="set-row set-row--check" data-needs="ai-enabled">
+              <label class="fd-form-label" for="ai-memories">KI darf Erinnerungen benennen</label>
+              <div class="set-field"><input type="checkbox" id="ai-memories"></div>
+              <p class="set-hint">Nur auf Knopfdruck je Erinnerung: Sie bekommt bis zu acht verkleinerte Bilder und schlägt Titel, einen Satz und das Titelbild vor.</p>
+            </div>
+            <div class="set-row set-row--check" data-needs="ai-enabled">
+              <label class="fd-form-label" for="ai-inbox-auto">Eingang: KI sieht sich neue Bilder von selbst an</label>
+              <div class="set-field"><input type="checkbox" id="ai-inbox-auto"></div>
+              <p class="set-hint">Jedes Bild, das ankommt, einmal; Beschreibung und Schlagworte bleiben Vorschlag, bis du sie beim Einsortieren übernimmst. Kostet je Bild eine Anfrage.</p>
+            </div>
+            <div class="set-row" data-needs="ai-enabled">
+              <label class="fd-form-label" for="ai-provider">Anbieter</label>
+              <div class="set-field">
+                <select class="fd-input set-select" id="ai-provider">
                   <option value="anthropic">Claude (Anthropic)</option>
                   <option value="ollama">Ollama (eigener Rechner)</option>
                   <option value="openai">Anderer, OpenAI-kompatibel</option>
                 </select>
-                <label class="fd-form-label ai-url" for="ai-url">Adresse des Servers</label>
-                <input class="fd-input ai-url" id="ai-url" placeholder="http://192.168.1.10:11434" spellcheck="false" autocapitalize="off">
-                <label class="fd-form-label" for="ai-key">API-Schlüssel</label>
-                <div class="inline">
-                  <input class="fd-input masked" id="ai-key" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
-                  <button id="ai-clear-key" class="fd-button fd-button--transparent" type="button">Entfernen</button>
-                </div>
-                <label class="fd-form-label" for="ai-model">Modell</label>
-                <div class="inline">
-                  <select class="fd-input" id="ai-model"></select>
-                  <button id="ai-load-models" class="fd-button" type="button">Modelle laden</button>
-                </div>
-                <label class="fd-form-label" for="ai-limit">Monatslimit (US-Dollar)</label>
-                <input class="fd-input" id="ai-limit" type="number" min="0" step="0.5">
-                <span></span>
-                <span id="ai-usage" class="field-hint"></span>
               </div>
             </div>
-            <div class="card">
-              <h4 class="fd-title fd-title--h5 card-title">Bereiche</h4>
-              <p class="field-hint">Bilder aus angekreuzten Bereichen gehen nie an die KI.</p>
-              <div id="ai-areas" class="sec-checks"></div>
+            <div class="set-row ai-url" data-needs="ai-enabled">
+              <label class="fd-form-label" for="ai-url">Adresse des Servers</label>
+              <div class="set-field"><input class="fd-input set-wide" id="ai-url" placeholder="http://192.168.1.10:11434" spellcheck="false" autocapitalize="off"></div>
             </div>
-            <div class="card">
+            <div class="set-row" data-needs="ai-enabled">
+              <label class="fd-form-label" for="ai-key">API-Schlüssel</label>
+              <div class="set-field inline">
+                <input class="fd-input masked set-wide" id="ai-key" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
+                <button id="ai-clear-key" class="fd-button fd-button--transparent" type="button">Entfernen</button>
+              </div>
+            </div>
+            <div class="set-row" data-needs="ai-enabled">
+              <label class="fd-form-label" for="ai-model">Modell</label>
+              <div class="set-field inline">
+                <select class="fd-input set-wide" id="ai-model"></select>
+                <button id="ai-load-models" class="fd-button" type="button">Modelle laden</button>
+              </div>
+            </div>
+            <div class="set-row" data-needs="ai-enabled">
+              <label class="fd-form-label" for="ai-limit">Monatslimit (US-Dollar)</label>
+              <div class="set-field"><input class="fd-input set-num" id="ai-limit" type="number" min="0" step="0.5"></div>
+              <p id="ai-usage" class="set-hint"></p>
+            </div>
+            <div class="set-row" data-needs="ai-enabled">
+              <span class="fd-form-label">Nie an die KI senden</span>
+              <div id="ai-areas" class="set-field sec-checks"></div>
+              <p class="set-hint">Bilder aus angekreuzten Bereichen gehen nie an die KI.</p>
+            </div>
+            <div class="set-sub">
               <div class="pane-head">
-                <h4 class="fd-title fd-title--h5 card-title">Anweisungen</h4>
+                <h4 class="fd-title fd-title--h5 set-subtitle">Anweisungen</h4>
                 <button id="ai-add-prompt" class="fd-button" type="button">Neue Anweisung</button>
               </div>
               <p class="field-hint">Was die KI mit dem Bild tun soll. Das Antwortformat hängt Augenblick! selbst an. Die angekreuzte Anweisung ist vorausgewählt.</p>
               <div id="ai-prompts" class="ai-prompts"></div>
             </div>
-            <div class="form-actions">
-              <span id="ai-msg" class="form-msg"></span>
+            <div class="set-actions">
               <button id="ai-test" class="fd-button" type="button">Testen</button>
-              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
+              <span id="ai-msg" class="form-msg" role="status"></span>
             </div>
           </form>
           <div class="card admin-only">
             <div class="pane-head">
-              <h4 class="fd-title fd-title--h5 card-title">Bestand beschreiben</h4>
+              <h4 class="fd-title fd-title--h5 set-subtitle">Bestand beschreiben</h4>
               <span class="inline"><select class="fd-input" id="stock-model" aria-label="Modell" hidden></select>
                 <button id="stock-go" class="fd-button" type="button">Jetzt beschreiben</button></span>
             </div>
@@ -534,55 +685,12 @@
           </div>
         </section>
 
-        <section class="set-pane" data-pane="sicherheit" hidden>
-          <h3 class="fd-title fd-title--h4">Sicherheit</h3>
-          <p id="sec-where" class="set-hint"></p>
-          <form id="sec-form" autocomplete="off" data-bwignore="true">
-            <div class="card">
-              <h4 class="fd-title fd-title--h5 card-title">Anmeldung</h4>
-              <label class="check"><input type="checkbox" id="sec-ext"> <span>Von außen nur mit zweitem Faktor</span></label>
-              <p class="field-hint sec-hint">Konten ohne zweiten Faktor können sich dann nur noch im Heimnetz anmelden. Einschalten lässt sich das erst, wenn dein eigenes Konto einen hat.</p>
-              <p id="sec-without" class="field-hint sec-hint is-warn" hidden></p>
-              <label class="check"><input type="checkbox" id="sec-int"> <span>Zweiten Faktor auch im Heimnetz verlangen</span></label>
-              <p class="field-hint sec-hint">Sonst reicht zu Hause das Passwort. Von außen fragt Augenblick! immer nach dem Code, wenn ein Konto einen zweiten Faktor hat.</p>
-            </div>
-            <div class="card">
-              <h4 class="fd-title fd-title--h5 card-title">Heimnetz</h4>
-              <p class="field-hint sec-hint">Adressbereiche, die als „zu Hause“ gelten (LAN, VPN). Alles andere ist „von außen“. Leer lassen für die Vorgabe.</p>
-              <textarea class="fd-input sec-nets" id="sec-nets" rows="3" spellcheck="false" autocapitalize="off"></textarea>
-              <p id="sec-nets-here" class="field-hint sec-hint"></p>
-            </div>
-            <div class="card">
-              <h4 class="fd-title fd-title--h5 card-title">Benachrichtigungen per ntfy</h4>
-              <div class="form-grid">
-                <label class="fd-form-label" for="sec-url">Topic-Adresse</label>
-                <input class="fd-input" id="sec-url" placeholder="https://ntfy.example.org/augenblick" autocomplete="off" spellcheck="false">
-                <label class="fd-form-label" for="sec-token">Zugangs-Token</label>
-                <div class="inline">
-                  <input class="fd-input masked" id="sec-token" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
-                  <button id="sec-clear-token" class="fd-button fd-button--transparent" type="button">Entfernen</button>
-                </div>
-                <span class="fd-form-label">Melden bei</span>
-                <div class="sec-checks">
-                  <label class="check"><input type="checkbox" id="sec-n-ext"> <span>jeder Anmeldung von außen</span></label>
-                  <label class="check"><input type="checkbox" id="sec-n-lock"> <span>gesperrtem Konto nach Fehlversuchen</span></label>
-                  <label class="check"><input type="checkbox" id="sec-n-2fa"> <span>Änderungen am zweiten Faktor und benutzten Wiederherstellungscodes</span></label>
-                </div>
-              </div>
-            </div>
-            <div class="form-actions">
-              <span id="sec-msg" class="form-msg"></span>
-              <button id="sec-test" class="fd-button" type="button">Testnachricht</button>
-              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="set-pane" data-pane="api" hidden>
-          <h3 class="fd-title fd-title--h4">API</h3>
-          <p class="set-hint">Alles, was die Oberfläche kann, geht auch per REST-API unter /api/, für Skripte, Kurzbefehle oder Home Assistant.</p>
+        <!-- ---------------------------------------------------------------- Verbindungen -->
+        <section class="set-pane" data-pane="verbindungen" hidden>
+          <h3 class="fd-title fd-title--h4">Verbindungen</h3>
+          <p class="set-intro">Alles, was die Oberfläche kann, geht auch per REST-API unter /api/, für Skripte, Kurzbefehle oder Home Assistant.</p>
           <div class="card">
-            <h4 class="fd-title fd-title--h5 card-title">API-Schlüssel</h4>
+            <h4 class="fd-title fd-title--h5 set-subtitle">API-Schlüssel</h4>
             <p class="field-hint">Jedes Programm bekommt seinen eigenen Schlüssel, dann lässt sich einer allein widerrufen. „Lesen und schreiben“ darf alles wie ein Administrator, „Nur lesen“ sieht alle Bereiche, ändert aber nichts. Gespeichert wird nur ein Fingerabdruck des Schlüssels – er wird genau einmal angezeigt, beim Anlegen.</p>
             <table class="fd-table up-table api-table"><tbody id="api-keys" class="fd-table__body"></tbody></table>
             <div id="api-fresh" class="up-fresh" hidden>
@@ -604,124 +712,163 @@
               <button class="fd-button" type="submit">Schlüssel anlegen</button>
             </form>
             <p id="api-state" class="field-hint"></p>
-          </div>
-          <div class="card">
-            <h4 class="fd-title fd-title--h5 card-title">Upload vom Telefon (WebDAV)</h4>
-            <p class="field-hint">Apps wie PhotoSync laden neue Fotos über WebDAV hoch. Diese Tür führt nur in einen Bereich: Die App kann dort nachsehen, Ordner anlegen und Dateien ablegen – Bilder lesen, ändern oder löschen kann sie nicht, und den übrigen Bestand sieht sie nie. Der Upload-Schlüssel öffnet nur diese Tür, nicht die API.</p>
-            <div class="form-grid">
-              <label class="fd-form-label" for="up-area">Bereich für Uploads</label>
-              <select class="fd-input" id="up-area"></select>
-              <span class="fd-form-label">Adresse</span>
-              <code id="up-url"></code>
-              <span class="fd-form-label">Anmeldung in der App</span>
-              <span>Benutzer beliebig (z. B. <code>upload</code>), Passwort = Upload-Schlüssel</span>
-            </div>
-            <h5 class="fd-title fd-title--h6 up-head">Upload-Schlüssel</h5>
-            <p class="field-hint">Je Telefon oder Person ein eigener Schlüssel: So lässt sich einer sperren, ohne die anderen zu stören. Ein Schlüssel kann in einen eigenen Bereich führen statt in den oben gewählten.</p>
-            <p class="field-hint">Steht bei einem Schlüssel ein Fotograf, schreibt Augenblick! diesen Namen beim Hochladen in jedes Bild, das noch keinen trägt. So bleibt erkennbar, von wem ein Bild stammt, auch wenn es später in einen anderen Bereich wandert.</p>
-            <table class="fd-table up-table"><tbody id="up-keys" class="fd-table__body"></tbody></table>
-            <div id="up-fresh" class="up-fresh" hidden>
-              <span id="up-fresh-for"></span>
-              <div class="inline api-key-row">
-                <input class="fd-input api-key" id="up-key" type="text" readonly autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
-                <button id="up-copy" class="fd-button" type="button">Kopieren</button>
+
+            <div class="set-sub mcp-card">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Zugang für KI-Assistenten (MCP)</h4>
+              <p class="field-hint">Über diesen Zugang kann ein KI-Assistent wie Claude in Augenblick! suchen, Bilder ansehen und – mit einem Schlüssel, der schreiben darf – Datum, Ort, Beschreibung, Schlagworte, Alben und Namen in die Bilder schreiben, Bilder verschieben oder in den Papierkorb legen. Jede Änderung steht unter Änderungen und lässt sich zurücknehmen; endgültig löschen kann der Assistent nichts.</p>
+              <div class="set-row set-row--check">
+                <label class="fd-form-label" for="mcp-on">MCP-Zugang einschalten</label>
+                <div class="set-field"><input type="checkbox" id="mcp-on"> <span id="mcp-msg" class="form-msg" role="status"></span></div>
               </div>
-              <span class="hint">Jetzt kopieren und in der App als Passwort eintragen – er wird nicht wieder angezeigt.</span>
+              <div class="set-row">
+                <span class="fd-form-label">Adresse</span>
+                <div class="set-field"><code id="mcp-url" class="mcp-url"></code></div>
+                <p class="set-hint">Der Assistent meldet sich mit einem API-Schlüssel an, nur lesend oder lesend und schreibend. Schlüssel legst du oben unter „API-Schlüssel“ an.</p>
+              </div>
             </div>
-            <form id="up-add" class="inline up-add">
-              <input class="fd-input" id="up-name" maxlength="40" placeholder="Name, z. B. Gretas iPhone" aria-label="Name des neuen Schlüssels" required>
-              <button class="fd-button" type="submit">Schlüssel hinzufügen</button>
-            </form>
-            <p id="up-state" class="field-hint"></p>
-          </div>
-          <div class="card">
-            <h4 class="fd-title fd-title--h5 card-title">Beschreibung aller Endpunkte</h4>
-            <p class="field-hint">Augenblick! beschreibt seine API selbst: jeder Endpunkt mit Parametern und Antwort, direkt im Browser ausprobierbar (mit deiner Anmeldung).</p>
-            <p><a class="fd-link" href="/api/docs" target="_blank" rel="noopener">API-Beschreibung öffnen</a> · <a class="fd-link" href="/api/openapi.json" target="_blank" rel="noopener">openapi.json</a></p>
+
+            <div class="set-sub">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Upload vom Telefon (WebDAV)</h4>
+              <p class="field-hint">Apps wie PhotoSync laden neue Fotos über WebDAV hoch. Diese Tür führt nur in einen Bereich: Die App kann dort nachsehen, Ordner anlegen und Dateien ablegen – Bilder lesen, ändern oder löschen kann sie nicht, und den übrigen Bestand sieht sie nie. Der Upload-Schlüssel öffnet nur diese Tür, nicht die API.</p>
+              <div class="set-row">
+                <label class="fd-form-label" for="up-area">Bereich für Uploads</label>
+                <div class="set-field"><select class="fd-input set-select" id="up-area"></select></div>
+              </div>
+              <div class="set-row">
+                <span class="fd-form-label">Adresse</span>
+                <div class="set-field"><code id="up-url"></code></div>
+              </div>
+              <div class="set-row">
+                <span class="fd-form-label">Anmeldung in der App</span>
+                <div class="set-field"><span>Benutzer beliebig (z. B. <code>upload</code>), Passwort = Upload-Schlüssel</span></div>
+              </div>
+              <h5 class="fd-title fd-title--h6 up-head">Upload-Schlüssel</h5>
+              <p class="field-hint">Je Telefon oder Person ein eigener Schlüssel: So lässt sich einer sperren, ohne die anderen zu stören. Ein Schlüssel kann in einen eigenen Bereich führen statt in den oben gewählten.</p>
+              <p class="field-hint">Steht bei einem Schlüssel ein Fotograf, schreibt Augenblick! diesen Namen beim Hochladen in jedes Bild, das noch keinen trägt. So bleibt erkennbar, von wem ein Bild stammt, auch wenn es später in einen anderen Bereich wandert.</p>
+              <table class="fd-table up-table"><tbody id="up-keys" class="fd-table__body"></tbody></table>
+              <div id="up-fresh" class="up-fresh" hidden>
+                <span id="up-fresh-for"></span>
+                <div class="inline api-key-row">
+                  <input class="fd-input api-key" id="up-key" type="text" readonly autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
+                  <button id="up-copy" class="fd-button" type="button">Kopieren</button>
+                </div>
+                <span class="hint">Jetzt kopieren und in der App als Passwort eintragen – er wird nicht wieder angezeigt.</span>
+              </div>
+              <form id="up-add" class="inline up-add">
+                <input class="fd-input" id="up-name" maxlength="40" placeholder="Name, z. B. Gretas iPhone" aria-label="Name des neuen Schlüssels" required>
+                <button class="fd-button" type="submit">Schlüssel hinzufügen</button>
+              </form>
+              <p id="up-state" class="field-hint"></p>
+            </div>
+
+            <div class="set-sub">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Beschreibung aller Endpunkte</h4>
+              <p class="field-hint">Augenblick! beschreibt seine API selbst: jeder Endpunkt mit Parametern und Antwort, direkt im Browser ausprobierbar (mit deiner Anmeldung).</p>
+              <p><a class="fd-link" href="/api/docs" target="_blank" rel="noopener">API-Beschreibung öffnen</a> · <a class="fd-link" href="/api/openapi.json" target="_blank" rel="noopener">openapi.json</a></p>
+            </div>
           </div>
         </section>
 
-        <section class="set-pane" data-pane="papierkorb">
-          <h3 class="fd-title fd-title--h4">Papierkorb</h3>
-          <p class="field-hint">Gelöschte Bilder wandern in den Papierkorb ihres Bereichs und lassen sich von dort zurückholen. Nach Ablauf der Frist verschwinden sie endgültig.</p>
-          <form id="trash-form" class="form-grid">
-            <label class="fd-form-label" for="trash-days">Aufbewahren (Tage)</label>
-            <input class="fd-input" id="trash-days" type="number" min="0" max="3650" step="1" required>
-            <span></span>
-            <span class="field-hint">0 heißt: nichts verschwindet von selbst, erst beim Leeren.</span>
-            <span></span>
-            <div><button class="fd-button fd-button--emphasized admin-only" type="submit">Speichern</button>
-              <span id="trash-set-msg" class="form-msg" role="status"></span></div>
+        <!-- ---------------------------------------------------------------- Sicherheit -->
+        <section class="set-pane" data-pane="sicherheit" hidden>
+          <h3 class="fd-title fd-title--h4">Sicherheit</h3>
+          <p id="sec-where" class="set-intro"></p>
+          <form id="sec-form" class="card" autocomplete="off" data-bwignore="true" data-autosave>
+            <h4 class="fd-title fd-title--h5 set-subtitle">Anmeldung</h4>
+            <div class="set-row set-row--check">
+              <label class="fd-form-label" for="sec-ext">Von außen nur mit zweitem Faktor</label>
+              <div class="set-field"><input type="checkbox" id="sec-ext"></div>
+              <p class="set-hint">Konten ohne zweiten Faktor können sich dann nur noch im Heimnetz anmelden. Einschalten lässt sich das erst, wenn dein eigenes Konto einen hat.</p>
+              <p id="sec-without" class="set-hint is-warn" hidden></p>
+            </div>
+            <div class="set-row set-row--check">
+              <label class="fd-form-label" for="sec-int">Zweiten Faktor auch im Heimnetz verlangen</label>
+              <div class="set-field"><input type="checkbox" id="sec-int"></div>
+              <p class="set-hint">Sonst reicht zu Hause das Passwort. Von außen fragt Augenblick! immer nach dem Code, wenn ein Konto einen zweiten Faktor hat.</p>
+            </div>
+
+            <div class="set-sub">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Heimnetz</h4>
+              <div class="set-row">
+                <label class="fd-form-label" for="sec-nets">Adressbereiche</label>
+                <div class="set-field"><textarea class="fd-input sec-nets set-wide" id="sec-nets" rows="3" spellcheck="false" autocapitalize="off"></textarea></div>
+                <p class="set-hint">Adressbereiche, die als „zu Hause“ gelten (LAN, VPN). Alles andere ist „von außen“. Leer lassen für die Vorgabe.</p>
+                <p id="sec-nets-here" class="set-hint"></p>
+              </div>
+            </div>
+
+            <div class="set-sub">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Benachrichtigungen per ntfy</h4>
+              <div class="set-row">
+                <label class="fd-form-label" for="sec-url">Topic-Adresse</label>
+                <div class="set-field"><input class="fd-input set-wide" id="sec-url" placeholder="https://ntfy.example.org/augenblick" autocomplete="off" spellcheck="false"></div>
+              </div>
+              <div class="set-row">
+                <label class="fd-form-label" for="sec-token">Zugangs-Token</label>
+                <div class="set-field inline">
+                  <input class="fd-input masked set-wide" id="sec-token" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
+                  <button id="sec-clear-token" class="fd-button fd-button--transparent" type="button">Entfernen</button>
+                </div>
+              </div>
+              <div class="set-row">
+                <span class="fd-form-label">Melden bei</span>
+                <div class="set-field sec-checks">
+                  <label class="check"><input type="checkbox" id="sec-n-ext"> <span>jeder Anmeldung von außen</span></label>
+                  <label class="check"><input type="checkbox" id="sec-n-lock"> <span>gesperrtem Konto nach Fehlversuchen</span></label>
+                  <label class="check"><input type="checkbox" id="sec-n-2fa"> <span>Änderungen am zweiten Faktor und benutzten Wiederherstellungscodes</span></label>
+                </div>
+              </div>
+            </div>
+            <div class="set-actions">
+              <button id="sec-test" class="fd-button" type="button">Testnachricht</button>
+              <span id="sec-msg" class="form-msg" role="status"></span>
+            </div>
           </form>
-          <p><a class="fd-button" href="#/papierkorb">Papierkorb öffnen</a></p>
         </section>
 
-        <section class="set-pane" data-pane="aenderungen">
-          <h3 class="fd-title fd-title--h4">Änderungen</h3>
-          <p class="field-hint">Was in die Bilder geschrieben wurde, das Neueste zuerst. Zurücknehmen geht, solange das Bild seither nicht noch einmal geändert wurde.</p>
-          <div id="journal"></div>
-          <span id="journal-msg" class="form-msg" role="status"></span>
-        </section>
-
-        <section class="set-pane" data-pane="auftraege" hidden>
-          <h3 class="fd-title fd-title--h4">Aufträge</h3>
-          <p class="set-hint">Was Augenblick! im Hintergrund tut und wie weit es ist. Die Anzeige erneuert sich von selbst.</p>
-          <div class="card">
-            <div class="pane-head">
-              <h4 class="fd-title fd-title--h5 card-title">Ordner einlesen</h4>
-              <button id="job-scan" class="fd-button admin-only" type="button">Jetzt einlesen</button>
-            </div>
-            <p id="job-scan-text" class="job-text"></p>
-            <progress id="job-scan-bar" class="job-bar" max="1" value="0" hidden></progress>
-          </div>
-          <div class="card">
-            <div class="pane-head">
-              <h4 class="fd-title fd-title--h5 card-title">Gesichter suchen</h4>
-              <button id="job-faces" class="fd-button admin-only" type="button">Jetzt suchen</button>
-            </div>
-            <p id="job-faces-text" class="job-text"></p>
-            <progress id="job-faces-bar" class="job-bar" max="1" value="0" hidden></progress>
-            <p class="field-hint">Die Suche sieht sich jedes Bild einmal an. Ein Bild, das sich seither nur in seinen Angaben geändert hat (Name, Datum, Album), wird nicht noch einmal durchsucht – der Bildinhalt ist derselbe.</p>
-          </div>
-          <div class="card">
-            <div class="pane-head">
-              <h4 class="fd-title fd-title--h5 card-title">Duplikate suchen</h4>
-              <span class="inline"><a class="fd-button fd-button--transparent" href="#/duplikate">Duplikate ansehen</a>
-                <button id="job-dupes" class="fd-button admin-only" type="button">Jetzt suchen</button></span>
-            </div>
-            <p id="job-dupes-text" class="job-text"></p>
-            <progress id="job-dupes-bar" class="job-bar" max="1" value="0" hidden></progress>
-            <p class="field-hint">Findet Bilder, die mehrfach da sind – auch in anderer Größe oder Qualität gespeichert. Die Suche liest nur; gelöscht wird erst, wenn du es auf der Seite „Duplikate“ sagst, und dann in den Papierkorb. Neue Bilder kommen nicht von selbst dazu: dafür noch einmal „Jetzt suchen“.</p>
-          </div>
-          <div class="card">
-            <div class="pane-head">
-              <h4 class="fd-title fd-title--h5 card-title">Großer Auftrag</h4>
-              <button id="job-stop" class="fd-button admin-only" type="button" hidden>Abbrechen</button>
-            </div>
-            <p id="job-long-text" class="job-text"></p>
-            <progress id="job-long-bar" class="job-bar" max="1" value="0" hidden></progress>
-            <p id="job-long-head" class="job-text" hidden></p>
-            <ul id="job-long-errors" class="job-errors"></ul>
-            <p class="inline"><button id="job-seen" class="fd-button fd-button--transparent admin-only" type="button" hidden>Gesehen, Liste ausblenden</button></p>
-            <p class="field-hint">Dazu gehören zum Beispiel „KI beschreibt den Bestand“, „Ordner als Album merken“, „Kopien auflösen“ und „Person umbenennen“. Es läuft immer nur einer. Übersprungene Bilder bleiben, wie sie waren – ein Klick auf den Namen öffnet das Bild. Ein Neustart von Augenblick! bricht den Auftrag ab; was bis dahin geschrieben wurde, bleibt. Nur „KI beschreibt den Bestand“ macht danach von selbst weiter.</p>
-          </div>
-          <p id="job-msg" class="form-msg" role="status"></p>
-        </section>
-
-        <section class="set-pane" data-pane="system">
+        <!-- ---------------------------------------------------------------- System -->
+        <section class="set-pane" data-pane="system" hidden>
           <h3 class="fd-title fd-title--h4">System</h3>
-          <p id="sys-line" class="field-hint"></p>
-          <button id="btn-rescan" class="fd-button admin-only" type="button">Ordner jetzt neu einlesen</button>
-          <div id="upd-card" class="card upd-card admin-only">
-            <h4 class="fd-title fd-title--h5">Neue Versionen</h4>
-            <label class="check"><input type="checkbox" id="upd-on"> <span>Einmal am Tag nach neuen Versionen sehen</span></label>
-            <p class="field-hint">Augenblick! fragt dafür bei version.worldgate.de nach. Übertragen werden nur App-Name, installierte Version und Installationsart (z. B. Docker) – keine Kennung, keine Fotos, keine Namen. Dort werden nur Tagessummen gezählt. Dauerhaft abschalten lässt es sich auch mit VERSIONSPRUEFUNG=0.</p>
-            <p id="upd-state" class="field-hint"></p>
-            <div><button id="upd-check" class="fd-button" type="button">Jetzt prüfen</button>
-              <span id="upd-msg" class="form-msg" role="status"></span></div>
+          <div class="card">
+            <p id="sys-line" class="set-intro"></p>
+            <button id="btn-rescan" class="fd-button admin-only" type="button">Ordner jetzt neu einlesen</button>
           </div>
-          <p id="sys-support" class="field-hint" hidden>Augenblick! ist freie Software und kostet nichts. Wenn es dir hilft:
-            <a id="sys-support-link" class="fd-link" target="_blank" rel="noopener">die Arbeit daran unterstützen</a>.</p>
+        </section>
+
+        <!-- ---------------------------------------------------------------- Über -->
+        <section class="set-pane" data-pane="ueber" hidden>
+          <h3 class="fd-title fd-title--h4">Über</h3>
+          <div class="card">
+            <div class="set-row">
+              <span class="fd-form-label">Version</span>
+              <div class="set-field"><b id="about-version"></b></div>
+            </div>
+            <div class="set-row">
+              <span class="fd-form-label">Lizenz</span>
+              <div class="set-field"><a class="fd-link" href="https://github.com/orohde/Augenblick/blob/main/LICENSE" target="_blank" rel="noopener" translate="no">GNU AGPL 3.0</a></div>
+              <p class="set-hint">Freie Software: Du darfst Augenblick! nutzen, ändern und weitergeben. Wer eine geänderte Fassung für andere betreibt, muss deren Quelltext offenlegen.</p>
+            </div>
+            <div class="set-row">
+              <span class="fd-form-label">Mehr dazu</span>
+              <div class="set-field"><a class="fd-link" id="about-manual" href="https://worldgate.de/augenblick/handbuch/" target="_blank" rel="noopener">Anleitung</a> · <a class="fd-link" href="https://github.com/orohde/Augenblick" target="_blank" rel="noopener">Quelltext</a></div>
+            </div>
+            <p id="sys-support" class="set-intro" hidden>Augenblick! ist freie Software und kostet nichts. Wenn es dir hilft:
+              <a id="sys-support-link" class="fd-link" target="_blank" rel="noopener">die Arbeit daran unterstützen</a>.</p>
+
+            <div id="upd-card" class="set-sub upd-card admin-only">
+              <h4 class="fd-title fd-title--h5 set-subtitle">Neue Versionen</h4>
+              <div class="set-row set-row--check">
+                <label class="fd-form-label" for="upd-on">Einmal am Tag nach neuen Versionen sehen</label>
+                <div class="set-field"><input type="checkbox" id="upd-on"></div>
+                <p class="set-hint">Augenblick! fragt dafür bei version.worldgate.de nach. Übertragen werden nur App-Name, installierte Version und Installationsart (z. B. Docker) – keine Kennung, keine Fotos, keine Namen. Dort werden nur Tagessummen gezählt. Dauerhaft abschalten lässt es sich auch mit VERSIONSPRUEFUNG=0.</p>
+              </div>
+              <p id="upd-state" class="set-intro"></p>
+              <div class="set-actions">
+                <button id="upd-check" class="fd-button" type="button">Jetzt prüfen</button>
+                <span id="upd-msg" class="form-msg" role="status"></span>
+              </div>
+            </div>
+          </div>
         </section>
       </div>
     </div>

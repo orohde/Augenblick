@@ -5,6 +5,8 @@ from PIL import Image
 
 from augenblick import __version__
 from conftest import PASSWORD, browser, make_jpeg
+from fastapi.testclient import TestClient
+from augenblick.app import create_app
 
 PUBLIC = {"/api/version", "/api/login", "/api/setup", "/api/logout", "/api/docs", "/api/openapi.json",
           "/api/docs/oauth2-redirect"}
@@ -45,6 +47,33 @@ def test_setup_only_once_and_only_from_home(app, anonymous):
     assert anonymous.post("/api/setup", json={"username": "oliver", "password": PASSWORD}).status_code == 201
     assert anonymous.get("/api/me").json()["is_admin"] is True
     assert anonymous.post("/api/setup", json={"username": "zwei", "password": PASSWORD}).status_code == 409
+
+
+PROXY = ("10.10.20.50", 50000)
+
+
+def home_says(app, where, forwarded=None) -> bool:
+    headers = {"X-Forwarded-For": forwarded} if forwarded else {}
+    return TestClient(app, client=where).get("/api/setup", headers=headers).json()["home"]
+
+
+def test_forwarded_address_only_from_a_trusted_proxy(app):
+    """Somebody on the internet must not become "at home" by sending X-Forwarded-For himself."""
+    outside = ("203.0.113.9", 40000)
+    assert home_says(app, outside) is False
+    assert home_says(app, outside, "10.10.30.5") is False          # straight from outside: header ignored
+    assert home_says(app, PROXY, "203.0.113.7") is False           # proxy reports a visitor from outside
+    assert home_says(app, PROXY, "10.10.30.5") is True             # proxy reports a visitor at home
+    # a proxy that appends: the visitor's own claim stands left of the real address
+    assert home_says(app, PROXY, "10.10.30.5, 203.0.113.7") is False
+
+
+def test_trusted_proxies_can_be_narrowed(settings):
+    from dataclasses import replace
+    app = create_app(replace(settings, trusted_proxies="10.10.20.50"), background=False)
+    assert home_says(app, PROXY, "203.0.113.7") is False
+    # another machine at home is no proxy any more: its header no longer counts
+    assert home_says(app, ("10.10.30.6", 50000), "203.0.113.7") is True
 
 
 def test_login_and_logout(app, admin):

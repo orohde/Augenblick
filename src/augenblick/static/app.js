@@ -98,6 +98,12 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme
 $('btn-theme').addEventListener('click', () => {
   theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
   store.set('theme', theme);
+  $('set-theme').value = theme;
+  applyTheme();
+});
+$('set-theme').addEventListener('change', () => {
+  theme = $('set-theme').value;
+  store.set('theme', theme);
   applyTheme();
 });
 
@@ -1838,10 +1844,14 @@ function message(node, text, bad = false) {
   node.classList.toggle('is-bad', bad);
 }
 
+// old addresses of panes that moved
+const PANE_ALIAS = { api: 'verbindungen', papierkorb: 'ablage' };
+
 async function showSettings(wanted) {
   if (!State.me) return;
+  wanted = PANE_ALIAS[wanted] || wanted;
   const panes = [...document.querySelectorAll('.set-link')].filter((a) => State.me.is_admin || !a.classList.contains('admin-only')).map((a) => a.dataset.pane);
-  const pane = panes.includes(wanted) ? wanted : (document.querySelector('.set-link.is-active') || {}).dataset?.pane || 'konto';
+  const pane = panes.includes(wanted) ? wanted : (document.querySelector('.set-link.is-active') || {}).dataset?.pane || 'allgemein';
   document.querySelectorAll('.set-link').forEach((a) => a.classList.toggle('is-active', a.dataset.pane === pane));
   document.querySelectorAll('.set-pane').forEach((p) => { p.hidden = p.dataset.pane !== pane; });
   $('trash-days').disabled = !State.me.is_admin;
@@ -1849,6 +1859,7 @@ async function showSettings(wanted) {
   $('me-line').textContent = t('Angemeldet als {0} ({1})', [State.me.display_name, State.me.name]) + (State.me.is_admin ? t(', Administrator.') : '.');
   try {
     const status = await api('status');
+    $('about-version').textContent = status.version;
     $('sys-support').hidden = !status.support;
     if (status.support) $('sys-support-link').href = status.support;
     $('sys-line').textContent = t('Version {0} · {1} Bilder im Index', [status.version, number(status.photos)])
@@ -1857,16 +1868,43 @@ async function showSettings(wanted) {
   } catch { /* leave empty */ }
   if (pane !== 'benutzer') $('usr-form').hidden = true;
   if (pane === 'konto') loadAccountSecurity();
-  if (pane === 'benutzer') { loadUsers(); renderAreaRows(); }
+  if (pane === 'allgemein') $('set-theme').value = theme;
+  if (pane === 'benutzer') loadUsers();
+  if (pane === 'ablage' && State.me.is_admin) renderAreaRows();
   if (pane === 'sicherheit') loadSecurity();
-  if (pane === 'api') { loadApiKey(); loadUpload(); }
-  if (pane === 'ki') { loadMcp(); loadAI(); }
+  if (pane === 'verbindungen') { loadApiKey(); loadUpload(); loadMcp(); }
+  if (pane === 'ki') loadAI();
   if (pane === 'personen') loadFaceSettings();
   if (pane === 'ordnen') { loadSorting(); loadSpots().then(loadSpotRows); }
   clearTimeout(jobsTimer);
   if (pane === 'auftraege') { message($('job-msg'), ''); showJobs(); }
   if (pane === 'aenderungen') renderJournal();
-  if (pane === 'system' && State.me.is_admin) loadUpdate().then(showUpdateCard);
+  if (pane === 'ueber') $('about-manual').href = LANG === 'de' ? 'https://worldgate.de/augenblick/handbuch/' : 'https://worldgate.de/en/augenblick-en/manual/';
+  if (pane === 'ueber' && State.me.is_admin) loadUpdate().then(showUpdateCard);
+  syncNeeds();
+}
+
+// ---- settings that save themselves (like CutStock and the sister apps): a change saves the whole form;
+// text fields fire "change" only when they are left, so nothing half-typed goes out. Buttons stay for actions.
+document.querySelectorAll('form[data-autosave]').forEach((form) => {
+  let timer = 0;
+  form.addEventListener('change', (event) => {
+    if (event.target.closest('[data-nosave]')) return;
+    syncNeeds();
+    clearTimeout(timer);
+    timer = setTimeout(() => form.requestSubmit(), 250);   // a ticked box and a picked value go out as one save
+  });
+  form.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && event.target.matches('input:not([type=checkbox])')) { event.preventDefault(); event.target.blur(); }
+  });
+});
+
+// rows that depend on a switch are greyed out while it is off
+function syncNeeds() {
+  document.querySelectorAll('#view-settings [data-needs]').forEach((row) => {
+    const sw = $(row.dataset.needs);
+    row.classList.toggle('is-disabled', Boolean(sw) && !sw.checked);
+  });
 }
 
 $('pw-form').addEventListener('submit', async (event) => {
@@ -3341,7 +3379,7 @@ function promptRow(prompt, isDefault) {
   const row = el('div', { class: 'ai-prompt' },
     el('label', { class: 'check', title: t('vorausgewählt') }, el('input', { type: 'radio', name: 'ai-default', checked: isDefault })),
     el('input', { class: 'fd-input', value: prompt.name, maxlength: 60, placeholder: t('Name'), 'aria-label': t('Name der Anweisung') }),
-    el('button', { class: 'fd-button fd-button--transparent', type: 'button', onclick: () => row.remove() }, t('Entfernen')),
+    el('button', { class: 'fd-button fd-button--transparent', type: 'button', onclick: () => { row.remove(); $('ai-form').requestSubmit(); } }, t('Entfernen')),
     el('textarea', { class: 'fd-textarea', rows: 4, maxlength: 6000, 'aria-label': t('Text der Anweisung') }));
   row.querySelector('textarea').value = prompt.text;
   return row;
@@ -3391,7 +3429,8 @@ function showAI(config) {
   fillModels(config.models, config.model);
   $('ai-areas').replaceChildren(...State.areas.map((area) => el('label', { class: 'check' },
     el('input', { type: 'checkbox', value: area.name, checked: config.excluded_areas.includes(area.name) }), el('span', {}, area.name))));
-  $('ai-prompts').replaceChildren(...config.prompts.map((p) => promptRow(p, p.name === config.default_prompt)));
+  // saving happens on leaving a field: do not pull the next prompt away from under the cursor
+  if (!$('ai-prompts').contains(document.activeElement)) $('ai-prompts').replaceChildren(...config.prompts.map((p) => promptRow(p, p.name === config.default_prompt)));
   syncAiProvider();
 }
 function syncAiProvider() {

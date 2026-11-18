@@ -29,7 +29,7 @@ Die meisten Fotoserver nehmen deine Bilder in eine eigene Ablage und merken sich
 - **Eingang abarbeiten:** Die KI schlägt für Neues Beschreibung und Schlagworte vor (auf Knopfdruck oder von selbst), Gesichter werden schon dort erkannt. Du streichst, was nicht passt, und sortierst mit einem Klick ein – danach kommt das nächste Bild.
 - **Filme und Live Photos**, HEIC, ProRAW (DNG, nur lesend).
 - **Bereiche und Rechte je Person**, zweiter Faktor, Heimnetz-Regeln, Meldungen über ntfy, REST-API (`/api/docs`) mit benannten API-Schlüsseln (nur lesen oder lesen und schreiben).
-- **Für KI-Assistenten (MCP):** Ein Assistent wie Claude kann über `/api/mcp` suchen, Bilder ansehen und – mit einem Schlüssel, der schreiben darf – Metadaten, Alben und Namen schreiben, verschieben, einsortieren und in den Papierkorb legen. Aus bei einer frischen Installation, eingeschaltet unter *Einstellungen → KI*.
+- **Für KI-Assistenten (MCP):** Ein Assistent wie Claude kann über `/api/mcp` suchen, Bilder ansehen und – mit einem Schlüssel, der schreiben darf – Metadaten, Alben und Namen schreiben, verschieben, einsortieren und in den Papierkorb legen. Aus bei einer frischen Installation, eingeschaltet unter *Einstellungen → Verbindungen*.
 - **KI, wenn du willst** (Claude, Ollama oder ein anderer OpenAI-kompatibler Dienst): schlägt Beschreibung und Schlagworte vor, benennt eine Erinnerung. Sie schreibt nie von selbst – mit einer Ausnahme, die du selbst startest: den Bestand beschreiben lassen, also jedes Bild ohne Schlagworte, damit die Suche Bilder nach ihrem Inhalt findet („Meer“, „Hochzeit“). Jede dieser Änderungen lässt sich zurücknehmen.
 - **Vier Sprachen:** Deutsch, Englisch, Französisch, Italienisch – je Konto wählbar.
 
@@ -72,10 +72,11 @@ Das Image gibt es für `linux/amd64` und `linux/arm64` (Raspberry Pi, Apple Sili
 | `AUGENBLICK_RESCAN_MINUTES` | `15` | wie oft die Ordner nach neuen oder geänderten Dateien durchgesehen werden |
 | `AUGENBLICK_INTERNAL_NETWORKS` | private Netze | was als Heimnetz zählt (auch unter *Einstellungen → Sicherheit*) |
 | `VERSIONSPRUEFUNG` | an | `0` schaltet die tägliche Frage nach neuen Versionen dauerhaft ab (siehe unten) |
+| `AUGENBLICK_TRUSTED_PROXIES` | private Netze | Von welchen Adressen `X-Forwarded-For` geglaubt wird, durch Komma getrennt (IP oder Netz, z. B. `10.10.20.50`). Am besten die Adresse des Reverse Proxys eintragen |
 
 ## Neue Versionen
 
-Einmal am Tag fragt Augenblick! bei `version.worldgate.de`, ob es eine neue Version gibt. Gibt es eine, sehen Admins oben einen Knopf mit Anleitung zum Aktualisieren. Übertragen werden dabei nur der Name der App, die installierte Version und die Installationsart (z. B. Docker), keine Kennung, keine Fotos und keine Namen. Gespeichert werden dort nur Tagessummen, keine IP-Adressen. Daraus sehen wir, wie viele Installationen ungefähr laufen. Abschalten lässt sich das unter *Einstellungen → System* oder dauerhaft mit `VERSIONSPRUEFUNG=0`.
+Einmal am Tag fragt Augenblick! bei `version.worldgate.de`, ob es eine neue Version gibt. Gibt es eine, sehen Admins oben einen Knopf mit Anleitung zum Aktualisieren. Übertragen werden dabei nur der Name der App, die installierte Version und die Installationsart (z. B. Docker), keine Kennung, keine Fotos und keine Namen. Gespeichert werden dort nur Tagessummen, keine IP-Adressen. Daraus sehen wir, wie viele Installationen ungefähr laufen. Abschalten lässt sich das unter *Einstellungen → Über* oder dauerhaft mit `VERSIONSPRUEFUNG=0`.
 
 ## Die Demo ausprobieren
 
@@ -124,7 +125,7 @@ AUGENBLICK_PHOTOS=/tmp/augenblick-demo/fotos AUGENBLICK_DATA=/tmp/augenblick-dem
   gespeichert wird nur ein Fingerabdruck, der Schlüssel selbst wird einmal beim Anlegen gezeigt.
 - **Zugang für KI-Assistenten (MCP).** Der Endpunkt `/api/mcp` spricht das Model Context Protocol (Streamable
   HTTP) und nimmt denselben Schlüssel wie die REST-API als `Authorization: Bearer <Schlüssel>`. Er ist bei einer
-  frischen Installation aus; ein Administrator schaltet ihn unter *Einstellungen → KI* ein. Die Werkzeuge: Bereiche,
+  frischen Installation aus; ein Administrator schaltet ihn unter *Einstellungen → Verbindungen* ein. Die Werkzeuge: Bereiche,
   Ordner, Alben, Personen, Orte, Kameras und Erinnerungen auflisten, Fotos suchen und filtern, Details lesen, eine
   kleine Vorschau ansehen, Gesichter, Eingang, Papierkorb und Änderungen ansehen – und mit Schreibrecht Metadaten
   ändern, Alben befüllen, drehen, Gesichter benennen, verschieben, aus dem Eingang einsortieren, in den Papierkorb

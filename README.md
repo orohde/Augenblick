@@ -31,7 +31,7 @@ Most photo servers take your pictures into a store of their own and keep what yo
 - **Working through the inbox:** the AI proposes a description and keywords for what arrives (on request or by itself), and faces are found there already. Strike out what does not fit and sort the picture in with one click – then the next one comes up.
 - **Films and Live Photos**, HEIC, ProRAW (DNG, read only).
 - **Areas and rights per person**, second factor, home-network rules, notifications via ntfy, REST API (`/api/docs`) with named API keys (read only or read and write).
-- **For AI assistants (MCP):** an assistant such as Claude can search via `/api/mcp`, look at pictures and – with a key that may write – write metadata, albums and names, move, sort in and put in the trash. Off in a fresh installation, switched on under *Settings → AI*.
+- **For AI assistants (MCP):** an assistant such as Claude can search via `/api/mcp`, look at pictures and – with a key that may write – write metadata, albums and names, move, sort in and put in the trash. Off in a fresh installation, switched on under *Settings → Connections*.
 - **AI if you want it** (Claude, Ollama or any OpenAI-compatible server): proposes descriptions and keywords, names a memory. It never writes by itself – with one exception you start yourself: letting it describe every picture that has no keywords yet, so that the search finds pictures by what they show (“sea”, “wedding”). Every such change can be undone.
 - **Four languages:** German, English, French, Italian – chosen per account.
 
@@ -74,10 +74,11 @@ The image is built for `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple sili
 | `AUGENBLICK_RESCAN_MINUTES` | `15` | how often the folders are looked through for new or changed files |
 | `AUGENBLICK_INTERNAL_NETWORKS` | private ranges | what counts as the home network (also under *Settings → Security*) |
 | `VERSIONSPRUEFUNG` | on | `0` switches the daily check for new versions off for good (see below) |
+| `AUGENBLICK_TRUSTED_PROXIES` | private ranges | Which addresses may report the client address via `X-Forwarded-For`, comma-separated (IP or network, e.g. `10.10.20.50`). Best set to your reverse proxy's address |
 
 ## New versions
 
-Once a day Augenblick! asks `version.worldgate.de` whether a new version exists. If so, admins see a button at the top with update instructions. Only the app name, the installed version and the kind of installation (e.g. Docker) are sent: no identifier, no photos, no names. The service keeps daily totals only, no IP addresses. That tells us roughly how many installations are running. Switch it off under *Settings → System*, or for good with `VERSIONSPRUEFUNG=0`.
+Once a day Augenblick! asks `version.worldgate.de` whether a new version exists. If so, admins see a button at the top with update instructions. Only the app name, the installed version and the kind of installation (e.g. Docker) are sent: no identifier, no photos, no names. The service keeps daily totals only, no IP addresses. That tells us roughly how many installations are running. Switch it off under *Settings → About*, or for good with `VERSIONSPRUEFUNG=0`.
 
 ## Try the demo
 
@@ -125,7 +126,7 @@ AUGENBLICK_PHOTOS=/tmp/augenblick-demo/fotos AUGENBLICK_DATA=/tmp/augenblick-dem
   is stored, the key itself is shown once, when it is created.
 - **Access for AI assistants (MCP).** The endpoint `/api/mcp` speaks the Model Context Protocol (streamable HTTP)
   and takes the same key as the REST API as `Authorization: Bearer <key>`. It is off in a fresh installation; an
-  administrator switches it on under *Settings → AI*. The tools: list areas, folders, albums, people, places, cameras
+  administrator switches it on under *Settings → Connections*. The tools: list areas, folders, albums, people, places, cameras
   and memories, search and filter photos, read details, look at a small preview, see faces, the inbox, the trash and
   the changes – and with the right to write change metadata, fill albums, rotate, name faces, move, sort in from the
   inbox, put in the trash, restore and take changes back. Rights, journal and trash apply as in the interface; a

@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel, Field
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from . import __version__
 from .ai import (MEMORY_SYSTEM, MODEL_LABELS, PHOTO_SYSTEM, PRICES, AIError, AIService, in_language, memory_prompt, parse_memory, parse_suggestion,
@@ -469,7 +470,7 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     old = app.state.security.load().api_token
     if old and app.state.apikeys.take_over(old, "API"):
         app.state.security.set_api_token("")
-        log.info("API key taken over as the named key \"API\"; manage it under Settings → API from now on")
+        log.info("API key taken over as the named key \"API\"; manage it under Settings → Connections from now on")
     app.state.guard = LoginGuard()
     app.state.wake = threading.Event()
     app.state.update_check = UpdateCheck("augenblick", __version__, settings.data)
@@ -2573,5 +2574,10 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
 
     mount_upload(app, inbox, settings.photos, settings.readonly, client_ip, app.state.wake, sign=editor.sign)
 
+    # Outermost layer: the client address and scheme come from X-Forwarded-For/-Proto only when the
+    # connection itself comes from a trusted proxy, and then from the rightmost entry that is not one
+    # of them. Trusting everybody would let anyone on the internet claim a home address.
+    app.add_middleware(ProxyHeadersMiddleware,
+                       trusted_hosts=settings.trusted_proxies or ", ".join(DEFAULT_INTERNAL))
     app.mount("/", StaticFiles(directory=STATIC, html=True), name="ui")
     return app

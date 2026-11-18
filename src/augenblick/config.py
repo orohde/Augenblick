@@ -22,6 +22,7 @@ class Settings:
     rescan_minutes: int = 15
     scan_workers: int = 2
     internal_networks: str = ""    # comma-separated CIDR ranges that count as "at home"; empty = private ranges
+    trusted_proxies: str = ""      # who may tell the client address (X-Forwarded-For); empty = private ranges
     api_token: str = ""
     models: Path | None = None     # where the face models lie; None = "models" in the data folder
     faces_load: float = 0.5        # share of one processor core the search for faces may take
@@ -94,6 +95,7 @@ def load_settings() -> Settings:
         rescan_minutes=int(os.environ.get("AUGENBLICK_RESCAN_MINUTES", "15")),
         scan_workers=int(os.environ.get("AUGENBLICK_SCAN_WORKERS", str(max(1, min(4, (os.cpu_count() or 2) // 3))))),
         internal_networks=os.environ.get("AUGENBLICK_INTERNAL_NETWORKS", ""),
+        trusted_proxies=os.environ.get("AUGENBLICK_TRUSTED_PROXIES", ""),
         api_token=os.environ.get("AUGENBLICK_API_TOKEN", ""),
         models=Path(os.environ["AUGENBLICK_MODELS"]).resolve() if os.environ.get("AUGENBLICK_MODELS") else None,
         faces_load=float(os.environ.get("AUGENBLICK_FACES_LOAD", "0.5")),
