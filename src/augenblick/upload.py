@@ -21,7 +21,7 @@ import time
 from datetime import datetime
 from email.utils import formatdate, parsedate_to_datetime
 from pathlib import Path
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 from xml.sax.saxutils import escape
 
 import anyio
@@ -188,12 +188,13 @@ def _key_of(request: Request) -> str:
 
 def _parts(path: str) -> list[str] | None:
     """The folders and the name of a path as the app asked for it – None if it tries to get out
-    or to touch what is hidden."""
-    parts = [unquote(part) for part in path.split("/") if part]
+    or to touch what is hidden. The server has decoded the path once already; decoding it a second
+    time would turn a sent %252F into a slash inside one part and open the way out."""
+    parts = [part for part in path.split("/") if part]
     for part in parts:
         if part in (".", "..") or part.startswith(".") or len(part) > 200 or part != part.strip():
             return None
-        if any(ord(sign) < 32 or sign in '\\:*?"<>|' for sign in part):
+        if any(ord(sign) < 32 or sign in '\\:*?"<>|%' for sign in part):
             return None
     return parts if len(parts) <= 8 else None
 
@@ -303,6 +304,8 @@ def mount(app, inbox: Inbox, root: Path, readonly: bool, client_ip, wake: thread
         if parts is None:
             return Response(status_code=403)
         path = folder.joinpath(*parts)
+        if not path.resolve().is_relative_to(folder.resolve()):   # a second lock, whatever slips through
+            return Response(status_code=403)
         href = base + "".join("/" + quote(part) for part in parts)
 
         if method == "PROPFIND":

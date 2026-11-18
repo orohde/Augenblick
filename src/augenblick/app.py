@@ -576,31 +576,33 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
                         "notify_lockout", "lock.title", "lock.body", priority=4, tags="warning",
                         user=name, count=failures, ip=ip, minutes=max(1, seconds // 60),
                         where=app.state.notify.text("where.ext" if external else "where.int"))
-                time.sleep(1)
             raise HTTPException(status_code=status, detail=detail)
 
-        wait = guard.locked_for(name, external)
+        wait = guard.begin(name, external)
         if wait:
             raise HTTPException(status_code=429, detail="locked", headers={"Retry-After": str(wait)})
-        account = app.state.users.authenticate(name, body.password)
-        if not account:
-            refuse(401, "invalid credentials")
-        policy = app.state.security.load()
-        if external and policy.require_2fa_external and not account.has_totp:
-            refuse(403, "second factor required outside", count=False)
-        mfa = False
-        if account.has_totp and (external or policy.require_2fa_internal or body.code):
-            if not body.code:
-                raise HTTPException(status_code=401, detail="code required")
-            if not app.state.users.second_factor(name, body.code):
-                refuse(401, "invalid code")
-            mfa = True
-        guard.success(name, external)
-        start_session(request, response, name, external, mfa)
-        if external:
-            app.state.notify.send("notify_external_login", "external.title", "external.body", user=name, ip=ip,
-                                  agent=describe_agent(request.headers.get("user-agent", "")))
-        return account.public()
+        try:
+            account = app.state.users.authenticate(name, body.password)
+            if not account:
+                refuse(401, "invalid credentials")
+            policy = app.state.security.load()
+            if external and policy.require_2fa_external and not account.has_totp:
+                refuse(403, "second factor required outside", count=False)
+            mfa = False
+            if account.has_totp and (external or policy.require_2fa_internal or body.code):
+                if not body.code:
+                    raise HTTPException(status_code=401, detail="code required")
+                if not app.state.users.second_factor(name, body.code):
+                    refuse(401, "invalid code")
+                mfa = True
+            guard.success(name, external)
+            start_session(request, response, name, external, mfa)
+            if external:
+                app.state.notify.send("notify_external_login", "external.title", "external.body", user=name, ip=ip,
+                                      agent=describe_agent(request.headers.get("user-agent", "")))
+            return account.public()
+        finally:
+            guard.end(name, external)
 
     @app.get("/api/setup", tags=["auth"])
     def setup_state(request: Request):
@@ -1970,6 +1972,18 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         that stand for it. Nothing is stored for them."""
         return [shown_memory(m) for m in memories.list(pick_areas(user, areas), lang=lang)]
 
+    def writable_memory_areas(user: User, areas: str | None) -> list[str]:
+        """What the AI says about a memory is kept for everyone: only who may write where it lies
+        may have it said (it costs money) or wiped."""
+        if settings.readonly:
+            raise HTTPException(status_code=403, detail="read-only")
+        return [a for a in pick_areas(user, areas) if user.can_write(a)]
+
+    def memory_missing(memory: str, user: User, areas: str | None, lang: str) -> HTTPException:
+        if memories.get(memory, pick_areas(user, areas), lang):
+            return HTTPException(status_code=403, detail="no write access to this area")
+        return HTTPException(status_code=404, detail="memory not found")
+
     @app.post("/api/memories/{memory}/ai", tags=["ai"])
     def name_memory(memory: str, areas: str | None = Query(None), user: User = Depends(current_user),
                     lang: str = Depends(request_lang)):
@@ -1978,10 +1992,10 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         config = ai.load()
         if not config.enabled or not config.memories:
             raise HTTPException(status_code=422, detail="AI is disabled")
-        mine = [a for a in pick_areas(user, areas) if ai.allowed_for(a)]
+        mine = [a for a in writable_memory_areas(user, areas) if ai.allowed_for(a)]
         found = memories.get(memory, mine, lang)
         if not found:
-            raise HTTPException(status_code=404, detail="memory not found")
+            raise memory_missing(memory, user, areas, lang)
         shown, pictures = [], []
         for key in found["picks"][:8]:
             photo = index.photo(key, mine)
@@ -2008,13 +2022,10 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     def unname_memory(memory: str, areas: str | None = Query(None), user: User = Depends(current_user),
                       lang: str = Depends(request_lang)):
         """Forget what the AI said about a memory: it is called what was found again."""
-        if settings.readonly:
-            raise HTTPException(status_code=403, detail="read-only")
+        if not memories.get(memory, writable_memory_areas(user, areas), lang):
+            raise memory_missing(memory, user, areas, lang)
         memories.note(memory, None)
-        found = memories.get(memory, pick_areas(user, areas), lang)
-        if not found:
-            raise HTTPException(status_code=404, detail="memory not found")
-        return shown_memory(found)
+        return shown_memory(memories.get(memory, pick_areas(user, areas), lang))
 
     @app.post("/api/photos/{key}/ai", tags=["ai"])
     def ask_ai(key: str, body: AskAI, user: User = Depends(current_user), lang: str = Depends(request_lang)):

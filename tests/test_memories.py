@@ -103,7 +103,7 @@ def rw(settings):
     app.state.index.scan()
     client = browser(app)
     assert client.post("/api/setup", json={"username": "oliver", "password": PASSWORD}).status_code == 201
-    client.ai = app.state.ai
+    client.ai, client.app = app.state.ai, app
     return client
 
 
@@ -138,3 +138,18 @@ def test_the_ai_names_a_memory_only_when_switched_on(rw, monkeypatch):
     back = rw.delete("/api/memories/reise-2019-07-12/ai").json()
     assert not back["by_ai"] and back["title"] == back["found"]
     assert rw.post("/api/memories/gibtesnicht/ai").status_code == 404
+
+
+def test_only_who_may_write_names_or_unnames_a_memory(rw, monkeypatch):
+    assert rw.put("/api/ai", json={"enabled": True, "memories": True}).status_code == 200
+    monkeypatch.setattr(rw.ai, "complete", lambda *a, **k: Completion(
+        text='{"title": "Wind", "text": "Meer.", "cover": 1}', model="test", input_tokens=1, output_tokens=1, cost=0.01, seconds=0.1))
+    assert rw.post("/api/memories/reise-2019-07-12/ai").status_code == 200
+    assert rw.post("/api/users", json={"name": "greta", "password": PASSWORD, "areas": {"Familie": "read"}}).status_code == 201
+    greta = browser(rw.app)
+    assert greta.post("/api/login", json={"username": "greta", "password": PASSWORD}).status_code == 200
+    assert [m["title"] for m in greta.get("/api/memories").json()] == ["Wind"]   # she sees it
+    assert greta.post("/api/memories/reise-2019-07-12/ai").status_code == 403  # but costs nothing
+    assert greta.delete("/api/memories/reise-2019-07-12/ai").status_code == 403
+    assert greta.delete("/api/memories/gibtesnicht/ai").status_code in (403, 404)
+    assert rw.get("/api/memories").json()[1]["title"] == "Wind"               # and wiped nothing

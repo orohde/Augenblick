@@ -76,6 +76,14 @@ def test_the_door_leads_nowhere_else(door, tmp_path):
     assert door.delete("/dav/a.jpg").status_code == 403
     assert door.request("MOVE", "/dav/a.jpg", headers={"Destination": "/dav/b.jpg"}).status_code == 403
     assert (door.photos / "Eingang/a.jpg").is_file()
+    # encoded once more than the server undoes (the test client itself decodes once): a slash that comes out of the second decoding must not open the way either
+    (door.photos / "Eingang/a").mkdir()
+    for path in ("/dav/a%25252F..%25252F..%25252FFamilie", "/dav/a%25252F..%25252F..", "/dav/a%25252F..%25252F..%25252F.augenblick"):
+        listing = door.request("PROPFIND", path, headers={"Depth": "1"})
+        assert listing.status_code in (403, 404), path
+        assert door.request("MKCOL", path + "%25252Fneu").status_code in (403, 404, 405, 409), path
+    assert door.put("/dav/a%25252F..%25252F..%25252FFamilie%25252Fy.jpg", content=data).status_code in (403, 404, 405, 409)
+    assert not list((door.photos / "Familie").rglob("y.jpg")) and not list(door.photos.rglob("neu"))
     # the upload key opens nothing but this door
     assert door.get("/api/areas").status_code == 401
     assert door.get("/api/timeline", headers={"Authorization": f"Bearer {door.key}"}).status_code == 401
@@ -273,3 +281,10 @@ def test_old_films_come_in_too(door):
     door.app.state.index.scan()
     film = door.app.state.index.by_path("Eingang/2025-07-13_16-55-07_film.mpg")
     assert film["kind"] == "video" and film["taken"] == "2025-07-13T16:55:07" and film["taken_src"] == "name"
+
+
+def test_a_path_part_never_holds_a_slash():
+    """uvicorn decodes the path once; a part must not be decoded a second time into a way out."""
+    assert upload._parts("a%2F..%2F..") is None                        # a name with % is no name a phone sends
+    assert upload._parts("a/../b") is None
+    assert upload._parts("iPhone Oliver/IMG_0001.jpg") == ["iPhone Oliver", "IMG_0001.jpg"]
