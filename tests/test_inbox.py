@@ -86,6 +86,18 @@ def test_one_picture_takes_the_persons_own_choice(box, model):
     assert done[0]["ok"] and photo["keywords"] == ["Urlaub", "Meer"] and photo["description"] == ""
 
 
+def test_one_picture_takes_an_estimated_place_only_where_it_has_none(box, model):
+    switch_on(box, model)
+    keys = keys_of(box)
+    done = box.post("/api/inbox/accept", json={"keys": [keys["IMG_4711.jpg"]], "area": "Familie",
+                                               "lat": 53.4285, "lon": 14.5528}).json()
+    assert done[0]["ok"] and (done[0]["photo"]["lat"], done[0]["photo"]["lon"]) == (53.4285, 14.5528)
+    box.patch(f"/api/photos/{keys['IMG_4712.jpg']}", json={"lat": 49.5, "lon": 7.75})
+    key = keys_of(box)["IMG_4712.jpg"]
+    done = box.post("/api/inbox/accept", json={"keys": [key], "area": "Familie", "lat": 53.4, "lon": 14.5}).json()
+    assert done[0]["ok"] and done[0]["photo"]["lat"] == 49.5                  # the picture's own place stays
+
+
 def test_without_taking_over_the_picture_only_moves(box):
     key = keys_of(box)["IMG_4712.jpg"]
     done = box.post("/api/inbox/accept", json={"keys": [key], "area": "Familie", "take": False}).json()

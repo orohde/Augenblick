@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hmac
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
@@ -12,6 +11,8 @@ from .lang import LANGUAGES, known
 
 COOKIE = "augenblick_session"              # plain http (local testing, own LAN without TLS)
 COOKIE_SECURE = "__Host-augenblick_session"  # https: Secure, whole host only, no Domain
+READING = ("GET", "HEAD")
+READ_POSTS = ("/api/mcp",)         # JSON-RPC always comes as POST; the tools check the right themselves
 
 
 @dataclass(frozen=True)
@@ -55,10 +56,17 @@ def needs_mfa_outside(request: Request, account) -> bool:
 
 def current_user(request: Request) -> User:
     header = request.headers.get("authorization", "")
-    api_token = request.app.state.security.load().api_token if header.startswith("Bearer ") else ""
-    if api_token:
-        if hmac.compare_digest(header[7:].encode(), api_token.encode()):
-            return User(name="api", display_name="API", is_admin=True)
+    if header.startswith("Bearer "):
+        key = request.app.state.apikeys.check(header[7:].strip())
+        if not key:
+            raise HTTPException(status_code=401, detail="not authenticated")
+        if key.right == "write":
+            return User(name="api", display_name=key.name, is_admin=True)
+        # a reading key sees every area but changes nothing – not even what needs no right to an area
+        if request.method not in READING and request.url.path not in READ_POSTS:
+            raise HTTPException(status_code=403, detail="this API key may only read")
+        areas = {a["name"]: "read" for a in request.app.state.index.areas()}
+        return User(name="api", display_name=key.name, is_admin=False, areas=areas)
     session = request.app.state.sessions.get(session_token(request), client_ip(request))
     account = request.app.state.users.get(session.user) if session else None
     if account:

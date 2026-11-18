@@ -46,7 +46,9 @@ class Prefs:
     """The few settings that belong to the installation, not to a person or a browser."""
 
     DEFAULTS = {"trash_days": 30, "sort_rules": [], "sort_modes": {}, "faces": [], "covers": {},
-                "areas": {}}      # per area what it does without: {"Bildschirmfotos": {"places": false, "dates": false}}
+                "areas": {},      # per area what it does without: {"Bildschirmfotos": {"places": false, "dates": false}}
+                "spots": [],      # places one picks again and again: [{"name": "Zuhause", "lat": 49.86, "lon": 7.8}]
+                "mcp": False}     # the MCP endpoint for AI assistants; off until an administrator turns it on
 
     def __init__(self, path: Path):
         self.path = path

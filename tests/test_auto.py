@@ -59,7 +59,8 @@ def paths(client, auto):
 def test_albums_that_fill_themselves(rw):
     found = {a["id"]: (a["name"], a["count"]) for a in rw.get("/api/auto").json()}
     assert found == {"videos": ("Videos", 2), "live": ("Live Photos", 1), "panoramen": ("Panoramen", 1),
-                     "raw": ("RAW", 1), "heute": ("An diesem Tag", 1)}        # no favourites yet: not listed
+                     "raw": ("RAW", 1), "heute": ("An diesem Tag", 1),        # no favourites yet: not listed
+                     "neu": ("Neu hinzugekommen", 2)}      # the two without a date of their own: as old as their file, today
     assert paths(rw, "videos") == ["Familie/2024/film.mov", "Familie/Weit/film.mov"]    # the film of the Live Photo is not one
     assert paths(rw, "live") == ["Familie/Neu/IMG_1.jpg"]
     assert paths(rw, "panoramen") == ["Familie/Weit/pano.jpg"]

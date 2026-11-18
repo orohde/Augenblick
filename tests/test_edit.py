@@ -332,6 +332,30 @@ def test_folder_becomes_album(rw):
     assert len({e["batch"] for e in rw.get("/api/journal").json()}) == 1
 
 
+def test_a_job_names_the_pictures_it_left_alone_until_they_are_seen(rw, monkeypatch):
+    import time
+    editor, real = rw.app.state.editor, rw.app.state.editor.change
+
+    def picky(photo, change, *args, **kwargs):
+        if photo["path"].endswith("bild.png"):
+            raise RuntimeError("check failed: not stored as asked (albums)")
+        return real(photo, change, *args, **kwargs)
+
+    monkeypatch.setattr(editor, "change", picky)
+    assert rw.post("/api/albums/from-folder", json={"folder": "Familie/dreh"}).status_code == 202
+    for _ in range(200):
+        job = rw.get("/api/job").json()
+        if not job["running"]:
+            break
+        time.sleep(0.1)
+    assert job["done"] == 4 and job["failed"] == 1
+    assert job["errors"] == [{"path": "Familie/dreh/bild.png", "key": key_of(rw, "bild.png"),
+                              "error": "check failed: not stored as asked (albums)"}]
+    assert rw.post("/api/job/seen").json() == {"ok": True}
+    job = rw.get("/api/job").json()
+    assert job["errors"] == [] and job["failed"] == 1          # the list goes, the count in the summary stays
+
+
 def test_a_doubled_xmp_entry_does_not_block_writing(rw):
     """Seen in real files: a face tool wrote stDim:unit twice; exiftool then refuses to touch the XMP."""
     path = rw.photos / "Familie/dreh/passt.jpg"
@@ -424,3 +448,63 @@ def test_who_took_it_lives_in_the_file(rw):
     undone = rw.post(f"/api/journal/{rw.get('/api/journal').json()[0]['id']}/undo")
     assert undone.status_code == 200 and undone.json()["creator"] == "Greta Müller"
     assert tags(path, "IFD0:Artist")["IFD0:Artist"] == "Greta Müller"
+
+
+needs_ffmpeg = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+
+
+@needs_ffmpeg
+def test_a_film_takes_date_place_and_words(rw):
+    from test_live import FILM
+    path = rw.photos / "Familie/film/klein.mov"
+    path.parent.mkdir(parents=True)
+    shutil.copy(FILM, path)
+    rw.app.state.index.scan()
+    key = key_of(rw, "klein.mov")
+    assert rw.get(f"/api/photos/{key}").json()["can_change"]
+    body = rw.patch(f"/api/photos/{key}", json={
+        "taken": "2024-07-15T11:00", "lat": 49.861145, "lon": 7.804155, "description": "Im Garten",
+        "add_keywords": ["Katze"], "rating": 4, "creator": "Paul", "add_albums": ["Urlaub/USA 2010"]})
+    assert body.status_code == 200, body.text
+    photo = body.json()
+    assert photo["taken"] == "2024-07-15T11:00:00" and (photo["lat"], photo["lon"]) == (49.861145, 7.804155)
+    assert photo["description"] == "Im Garten" and photo["keywords"] == ["Katze"] and photo["rating"] == 4
+    assert photo["creator"] == "Paul" and photo["albums"] == ["Urlaub/USA 2010"]
+    found = tags(path, "Keys:CreationDate", "Keys:GPSCoordinates", "Keys:ContentIdentifier")
+    assert found["Keys:CreationDate"] == "2024:07:15 11:00:00+02:00"         # the phone's zone stays
+    assert found["Keys:ContentIdentifier"] == "11111111-2222-3333-4444-555555555555"
+    # taken back: the film says again what it said before
+    entry = rw.get("/api/journal").json()[0]
+    undone = rw.post(f"/api/journal/{entry['id']}/undo")
+    assert undone.status_code == 200, undone.text
+    back = undone.json()
+    assert back["taken"] == "2024-07-14T10:20:29" and back["lat"] is None and back["keywords"] == []
+    assert back["description"] == "" and back["rating"] == 0 and back["albums"] == []
+
+
+@needs_ffmpeg
+def test_a_film_without_any_date_gets_one(rw):
+    path = rw.photos / "Familie/film/kamera.mp4"
+    path.parent.mkdir(parents=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=5", "-t", "1",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)], check=True)
+    rw.app.state.index.scan()
+    key = key_of(rw, "kamera.mp4")
+    body = rw.patch(f"/api/photos/{key}", json={"taken": "2023-01-02T03:04:05", "lat": -33.5, "lon": -70.25})
+    assert body.status_code == 200, body.text
+    assert body.json()["taken"] == "2023-01-02T03:04:05" and (body.json()["lat"], body.json()["lon"]) == (-33.5, -70.25)
+    cleared = rw.patch(f"/api/photos/{body.json()['key']}", json={"clear_place": True})
+    assert cleared.status_code == 200, cleared.text
+    cleared = cleared.json()
+    assert cleared["lat"] is None
+
+
+def test_old_film_formats_are_left_alone(rw):
+    path = rw.photos / "Familie/film/alt.mpg"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"kein echter Film")
+    rw.app.state.index.scan()
+    key = key_of(rw, "alt.mpg")
+    assert not rw.get(f"/api/photos/{key}").json()["can_change"]
+    answer = rw.patch(f"/api/photos/{key}", json={"rating": 3})
+    assert answer.status_code == 422 and "cannot be changed" in answer.text

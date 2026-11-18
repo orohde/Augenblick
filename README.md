@@ -23,13 +23,15 @@ Most photo servers take your pictures into a store of their own and keep what yo
 - **Lossless rotation** of JPEG (jpegtran) and HEIC; marked faces turn with the picture.
 - **Edit pictures:** crop, straighten, light and colours – as a new picture beside the original, which stays untouched behind it.
 - **Albums that live in the photo** (hierarchical keywords), **categories that fill themselves** (videos, Live Photos, panoramas, favourites, RAW, on this day) and **memories**: journeys and “this week in earlier years”, found from date and place.
+- **Start page and viewing:** first the pictures that came in last (however old they are), with memories and pinned albums. Every album, selection and memory can be viewed full screen – by hand or as a slide show.
 - **People.** Faces are found and grouped on your own machine (no cloud, no graphics card); names are stored as standard XMP regions.
 - **Duplicates**, also the same picture in another size; what only the copy knows is merged first.
 - **Sorting by rules**, if you want: a folder per year, file names from the date – with a preview, never without your say.
 - **Upload from the phone** over WebDAV (PhotoSync and others) into an inbox, with a key per phone that can do nothing but deliver. A key can sign what it delivers with the photographer's name, and pictures keep the date the phone had for them.
 - **Working through the inbox:** the AI proposes a description and keywords for what arrives (on request or by itself), and faces are found there already. Strike out what does not fit and sort the picture in with one click – then the next one comes up.
 - **Films and Live Photos**, HEIC, ProRAW (DNG, read only).
-- **Areas and rights per person**, second factor, home-network rules, notifications via ntfy, REST API (`/api/docs`).
+- **Areas and rights per person**, second factor, home-network rules, notifications via ntfy, REST API (`/api/docs`) with named API keys (read only or read and write).
+- **For AI assistants (MCP):** an assistant such as Claude can search via `/api/mcp`, look at pictures and – with a key that may write – write metadata, albums and names, move, sort in and put in the trash. Off in a fresh installation, switched on under *Settings → AI*.
 - **AI if you want it** (Claude, Ollama or any OpenAI-compatible server): proposes descriptions and keywords, names a memory. It never writes by itself – with one exception you start yourself: letting it describe every picture that has no keywords yet, so that the search finds pictures by what they show (“sea”, “wedding”). Every such change can be undone.
 - **Four languages:** German, English, French, Italian – chosen per account.
 
@@ -71,6 +73,11 @@ The image is built for `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple sili
 | `TZ` | `UTC` | time zone, e.g. `Europe/Berlin` |
 | `AUGENBLICK_RESCAN_MINUTES` | `15` | how often the folders are looked through for new or changed files |
 | `AUGENBLICK_INTERNAL_NETWORKS` | private ranges | what counts as the home network (also under *Settings → Security*) |
+| `VERSIONSPRUEFUNG` | on | `0` switches the daily check for new versions off for good (see below) |
+
+## New versions
+
+Once a day Augenblick! asks `version.worldgate.de` whether a new version exists. If so, admins see a button at the top with update instructions. Only the app name, the installed version and the kind of installation (e.g. Docker) are sent: no identifier, no photos, no names. The service keeps daily totals only, no IP addresses. That tells us roughly how many installations are running. Switch it off under *Settings → System*, or for good with `VERSIONSPRUEFUNG=0`.
 
 ## Try the demo
 
@@ -113,7 +120,17 @@ AUGENBLICK_PHOTOS=/tmp/augenblick-demo/fotos AUGENBLICK_DATA=/tmp/augenblick-dem
   area you choose in the settings: look, make folders, put files – the app can read, change or delete nothing, and
   nothing is ever overwritten. The upload key is a key of its own and opens nothing else.
 - **Accounts and security.** Areas per person, second factor (authenticator app), signed-in devices, home-network
-  rules, notifications via ntfy, an API key for scripts.
+  rules, notifications via ntfy, API keys for scripts: as many as you like, each with a name and a right (“Read
+  only” sees every area and changes nothing, “Read and write” may do what an administrator may); only a fingerprint
+  is stored, the key itself is shown once, when it is created.
+- **Access for AI assistants (MCP).** The endpoint `/api/mcp` speaks the Model Context Protocol (streamable HTTP)
+  and takes the same key as the REST API as `Authorization: Bearer <key>`. It is off in a fresh installation; an
+  administrator switches it on under *Settings → AI*. The tools: list areas, folders, albums, people, places, cameras
+  and memories, search and filter photos, read details, look at a small preview, see faces, the inbox, the trash and
+  the changes – and with the right to write change metadata, fill albums, rotate, name faces, move, sort in from the
+  inbox, put in the trash, restore and take changes back. Rights, journal and trash apply as in the interface; a
+  read-only key is offered no writing tool. Deleting for good and the settings of the installation are not
+  available over MCP.
 - **Sorting by rules, if you want it.** Per folder you can say where photos belong and what they are called, e.g.
   `{Jahr}` and `{JJJJMMTT}_{HHMMSS}` (the building blocks are German: year, date, time). A filter shows what does
   not fit, sorting moves after a preview. Without a rule nothing is ever moved or renamed; nothing is overwritten,
@@ -154,14 +171,15 @@ AUGENBLICK_PHOTOS=/tmp/augenblick-demo/fotos AUGENBLICK_DATA=/tmp/augenblick-dem
   new JPEG beside the original, which is never changed: it is renamed to `…_original`, stands behind the new
   picture and goes wherever that goes. What was done is written in the new picture, so it can be done again
   from the original or taken back.
-- **Not yet:** changing videos, turning formats other than JPEG and HEIC, faces in videos.
+- **Not yet:** changing raw files and older video formats (such as AVI, MPG), turning formats other than JPEG and HEIC, faces in videos.
 
 ## Principles
 
 - **Your folders are the truth.** No import, no private storage. Augenblick! reads the folders you already have.
   Each folder directly below the photo root is an *area*; accounts get rights per area.
 - **Metadata lives in the file.** Date, place, description, keywords, rating and people are written into the image
-  (EXIF/IPTC/XMP). A standard `.xmp` sidecar is used only where embedding is not safe (raw files, video).
+  (EXIF/IPTC/XMP), for videos (MOV, MP4) into the film's own file. No sidecar files; raw files stay as the camera
+  wrote them.
 - **The database is only an index.** A small SQLite file that can be rebuilt from the photos at any time.
 - **Non-destructive where possible.** Rotation is lossless; every change is journaled and can be undone.
 - **One container.** Python, FastAPI, no external services required.

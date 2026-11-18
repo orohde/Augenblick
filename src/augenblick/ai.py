@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
 import re
 import threading
@@ -393,9 +394,16 @@ PHOTO_SYSTEM = (
     "Du hilfst, ein privates Fotoarchiv zu beschriften. Du bekommst ein Foto, einige Angaben dazu und einen Auftrag. "
     "Antworte ausschließlich mit einem JSON-Objekt in genau dieser Form, ohne Text davor oder danach:\n"
     '{"description": "Text oder leer", "keywords": ["Schlagwort", "..."], '
-    '"date": "JJJJ-MM-TT, JJJJ-MM, JJJJ oder null", "note": "kurzer Hinweis für den Menschen oder leer"}\n'
+    '"date": "JJJJ-MM-TT, JJJJ-MM, JJJJ oder null", '
+    '"place": {"name": "Ort, Land", "lat": Breite, "lon": Länge} oder null, '
+    '"note": "kurzer Hinweis für den Menschen oder leer"}\n'
     "\"date\" nur füllen, wenn das Bild laut den Angaben kein Aufnahmedatum hat und du eines schätzen kannst; "
-    "in \"note\" steht dann, woran du die Schätzung festmachst."
+    "in \"note\" steht dann, woran du die Schätzung festmachst.\n"
+    "\"place\" nur füllen, wenn du den Ort am Bild selbst oder an den Angaben (etwa dem Ordner) erkennst – ein Bauwerk, "
+    "ein Schild, eine bekannte Landschaft –, mit den ungefähren Koordinaten in Dezimalgrad; sonst null. "
+    "Stehen in den Angaben schon Koordinaten, fülle \"place\" nur, wenn das Bild deutlich woanders entstanden ist, "
+    "und schreibe in \"note\", woran du das siehst. "
+    "Erkennst du einen der festen Orte des Archivs wieder, nimm genau dessen Namen und Koordinaten."
 )
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 _DATE = re.compile(r"^(\d{4})(?:-(\d\d))?(?:-(\d\d))?$")
@@ -417,7 +425,7 @@ def in_language(system: str, lang: str = "de") -> str:
     return system + ANSWER_IN[known(lang)]
 
 
-def photo_prompt(photo: dict, task: str, known_keywords: list[str]) -> str:
+def photo_prompt(photo: dict, task: str, known_keywords: list[str], spots: list[dict] | None = None) -> str:
     facts = [f"Dateiname: {photo['name']}", f"Ordner: {photo['folder']}"]
     facts.append(f"Aufnahmedatum: {photo['taken']}" if photo["taken_src"] == "exif"
                  else "Aufnahmedatum: keines im Bild")
@@ -435,6 +443,9 @@ def photo_prompt(photo: dict, task: str, known_keywords: list[str]) -> str:
         facts.append("Bisherige Schlagworte: " + ", ".join(photo["keywords"]))
     if known_keywords:
         facts.append("Schlagworte, die im Archiv schon vorkommen: " + ", ".join(known_keywords))
+    if spots:
+        facts.append("Feste Orte des Archivs (Name: Breite, Länge): "
+                     + "; ".join(f"{s['name']}: {s['lat']:.5f}, {s['lon']:.5f}" for s in spots))
     return "Angaben zum Foto:\n" + "\n".join(facts) + "\n\nAuftrag:\n" + task.strip()
 
 
@@ -464,7 +475,20 @@ def parse_suggestion(text: str) -> dict:
         except ValueError:
             date = None
     return {"description": " ".join(str(data.get("description") or "").split())[:2000], "keywords": keywords[:30],
-            "date": date, "note": " ".join(str(data.get("note") or "").split())[:500]}
+            "date": date, "place": _place(data.get("place")), "note": " ".join(str(data.get("note") or "").split())[:500]}
+
+
+def _place(data) -> dict | None:
+    """Where the model thinks the picture was taken: a name and coordinates, or nothing."""
+    if not isinstance(data, dict):
+        return None
+    try:
+        lat, lon = float(data.get("lat")), float(data.get("lon"))
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(lat) and math.isfinite(lon)) or abs(lat) > 90 or abs(lon) > 180 or (lat == 0 and lon == 0):
+        return None
+    return {"name": " ".join(str(data.get("name") or "").split())[:120], "lat": round(lat, 5), "lon": round(lon, 5)}
 
 
 MEMORY_SYSTEM = (

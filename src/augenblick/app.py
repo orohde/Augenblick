@@ -24,14 +24,15 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .ai import (MEMORY_SYSTEM, MODEL_LABELS, PHOTO_SYSTEM, PRICES, AIError, AIService, in_language, memory_prompt, parse_memory, parse_suggestion,
                  photo_prompt, prompts_of)
+from .apikeys import ApiKeyError, ApiKeyStore
 from .auth import (User, client_ip, cookie_name, current_user, is_external, is_https, require_admin, request_lang,
                    session_token)
 from .config import Settings, load_settings
 from .decisions import Decisions
 from .dupes import Dupes
-from .edit import EditError, Editor
+from .edit import FILM_EXT, EditError, Editor
 from .faces import Engine, People
-from .geo import Geo
+from .geo import Geo, distance_km
 from .immich import Immich, ImmichError, edits_for, plan as immich_plan
 from .index import Index
 from .journal import Journal
@@ -47,11 +48,14 @@ from .security import (DEFAULT_INTERNAL, LoginGuard, Networks, Notifier, Securit
                        normalise_networks, otpauth_uri, qr_data_uri)
 from .prefs import LANGUAGES, PrefsStore
 from .users import UserError, UserStore
+from .versionspruefung import UpdateCheck
 
 log = logging.getLogger("augenblick")
 STATIC = Path(__file__).parent / "static"
 MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 IMMUTABLE = {"Cache-Control": "private, max-age=31536000, immutable"}
+# A place the AI recognises this far from the coordinates in the picture is worth a word to the person.
+FAR_KM = 50
 
 
 # Where people who like the programme can support the work. Empty: the settings show no such line.
@@ -59,6 +63,16 @@ SUPPORT_URL = "https://worldgate.de/unterstuetzen/"
 
 
 AREA_RE = re.compile(r"[A-Za-z0-9ÄÖÜäöüß][A-Za-z0-9ÄÖÜäöüß ._-]{0,39}")
+
+
+class Spot(BaseModel):
+    name: str = Field(..., min_length=1, max_length=60)
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+
+
+class SpotsIn(BaseModel):
+    spots: list[Spot] = Field(..., max_length=200)
 
 
 class AreaIn(BaseModel):
@@ -85,6 +99,7 @@ class UploadKeyIn(BaseModel):
 class TreePrefs(BaseModel):
     tree_open: list[str] | None = Field(None, max_length=5000)
     language: str | None = Field(None, max_length=5)
+    pins: list[str] | None = Field(None, max_length=100, description="albums pinned to the start page, in order")
 
 
 class SetupIn(BaseModel):
@@ -223,6 +238,8 @@ class InboxAccept(ManyMove):
     keywords: list[str] | None = Field(None, max_length=200, description="for one picture: these keywords instead")
     taken: str | None = Field(None, pattern=r"^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d)?$",
                               description="for one picture: this date, where the picture says none itself")
+    lat: float | None = Field(None, ge=-90, le=90, description="for one picture: this place, where the picture has none")
+    lon: float | None = Field(None, ge=-180, le=180)
 
 
 class FolderIn(BaseModel):
@@ -392,6 +409,24 @@ def _inbox_worker(app: FastAPI, stop: threading.Event) -> None:
             log.exception("inbox proposals failed")
 
 
+class ApiKeyIn(BaseModel):
+    name: str = Field(max_length=60)
+    right: str = Field("write", pattern="^(read|write)$", description="write: as an administrator; read: only look")
+
+
+class ApiKeyChange(BaseModel):
+    name: str | None = Field(None, max_length=60)
+    right: str | None = Field(None, pattern="^(read|write)$")
+
+
+class McpSwitch(BaseModel):
+    on: bool
+
+
+class UpdateSwitch(BaseModel):
+    on: bool
+
+
 def create_app(settings: Settings | None = None, background: bool = True) -> FastAPI:
     settings = settings or load_settings()
 
@@ -402,8 +437,10 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
             threading.Thread(target=_worker, args=(app, stop), daemon=True).start()
             threading.Thread(target=_face_worker, args=(app, stop), daemon=True).start()
             threading.Thread(target=_inbox_worker, args=(app, stop), daemon=True).start()
+            threading.Thread(target=app.state.update_check.run, args=(stop,), daemon=True).start()
             if not settings.readonly:
                 threading.Thread(target=_decisions_worker, args=(app, stop), daemon=True).start()
+                threading.Thread(target=app.state.resume_stock, daemon=True).start()
         yield
         stop.set()
         app.state.wake.set()
@@ -427,8 +464,15 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     app.state.notify = Notifier(app.state.security)
     app.state.networks = Networks(app.state.security.load().internal_networks or settings.internal_networks)
     app.state.security.import_api_token(settings.api_token)
+    app.state.apikeys = ApiKeyStore(settings.data / "apikeys.json")
+    # the single key from before goes on working as a named key that may write; the settings file forgets it
+    old = app.state.security.load().api_token
+    if old and app.state.apikeys.take_over(old, "API"):
+        app.state.security.set_api_token("")
+        log.info("API key taken over as the named key \"API\"; manage it under Settings → API from now on")
     app.state.guard = LoginGuard()
     app.state.wake = threading.Event()
+    app.state.update_check = UpdateCheck("augenblick", __version__, settings.data)
     app.state.faces_wake = threading.Event()
     app.state.inbox_wake = threading.Event()
     index: Index = app.state.index
@@ -615,6 +659,8 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         if body.tree_open is not None:
             app.state.user_prefs.set_tree_open(user.name, body.tree_open)
+        if body.pins is not None:
+            app.state.user_prefs.set_pins(user.name, body.pins)
         return app.state.user_prefs.get(user.name)
 
     @app.post("/api/me/password", tags=["auth"])
@@ -700,7 +746,7 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     @app.get("/api/security", tags=["security"])
     def get_security(request: Request, user: User = Depends(require_admin)):
         accounts = app.state.users.all()
-        return {**app.state.security.load().public(),
+        return {**app.state.security.load().public(), "api_keys": len(app.state.apikeys.all()),
                 "without_2fa": [a.name for a in accounts if not a.has_totp],
                 "networks_default": settings.internal_networks or ", ".join(DEFAULT_INTERNAL),
                 "client_ip": client_ip(request)}
@@ -731,22 +777,47 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         app.state.networks = Networks(config.internal_networks or settings.internal_networks)
         return get_security(request, user)
 
-    @app.get("/api/security/api-token", tags=["security"])
-    def get_api_token(user: User = Depends(require_admin)):
-        """The API key for scripts (empty: API only with a signed-in browser)."""
-        return {"api_token": app.state.security.load().api_token}
+    def _key_error(exc: ApiKeyError):
+        return HTTPException(status_code=404 if "unknown" in str(exc) else 409 if "exists" in str(exc) else 400,
+                             detail=str(exc))
 
-    @app.post("/api/security/api-token", tags=["security"])
-    def new_api_token(user: User = Depends(require_admin)):
-        """Create a new API key; the old one stops working at once."""
-        token = secrets.token_urlsafe(32)
-        app.state.security.set_api_token(token)
-        return {"api_token": token}
+    @app.get("/api/security/api-keys", tags=["security"])
+    def list_api_keys(user: User = Depends(require_admin)):
+        """All API keys with name, right and when they were made and last used – never the key itself."""
+        return [k.public() for k in app.state.apikeys.all()]
 
-    @app.delete("/api/security/api-token", tags=["security"])
-    def delete_api_token(user: User = Depends(require_admin)):
-        app.state.security.set_api_token("")
-        return {"api_token": ""}
+    @app.post("/api/security/api-keys", tags=["security"], status_code=201)
+    def new_api_key(body: ApiKeyIn, user: User = Depends(require_admin)):
+        """A new key. ``token`` is in this answer only – it is stored as a hash and cannot be shown again."""
+        try:
+            key, token = app.state.apikeys.create(body.name, body.right)
+        except ApiKeyError as exc:
+            raise _key_error(exc) from exc
+        return {**key.public(), "token": token}
+
+    @app.patch("/api/security/api-keys/{key_id}", tags=["security"])
+    def change_api_key(key_id: str, body: ApiKeyChange, user: User = Depends(require_admin)):
+        try:
+            return app.state.apikeys.change(key_id, body.name, body.right).public()
+        except ApiKeyError as exc:
+            raise _key_error(exc) from exc
+
+    @app.post("/api/security/api-keys/{key_id}/renew", tags=["security"])
+    def renew_api_key(key_id: str, user: User = Depends(require_admin)):
+        """Same name and right, new secret; the old secret stops working at once."""
+        try:
+            key, token = app.state.apikeys.renew(key_id)
+        except ApiKeyError as exc:
+            raise _key_error(exc) from exc
+        return {**key.public(), "token": token}
+
+    @app.delete("/api/security/api-keys/{key_id}", tags=["security"])
+    def delete_api_key(key_id: str, user: User = Depends(require_admin)):
+        try:
+            app.state.apikeys.delete(key_id)
+        except ApiKeyError as exc:
+            raise _key_error(exc) from exc
+        return {"ok": True}
 
     @app.post("/api/security/test", tags=["security"])
     def test_security(user: User = Depends(require_admin)):
@@ -759,6 +830,24 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     def status(user: User = Depends(current_user)):
         return {"version": __version__, "photos": index.count(), "scan": dict(index.progress),
                 "readonly": settings.readonly, "support": SUPPORT_URL}
+
+    @app.get("/api/update", tags=["system"])
+    def get_update(user: User = Depends(current_user)):
+        """Update check (version.worldgate.de): installed and newest version. Only admins see the details."""
+        info = app.state.update_check.public()
+        return info if user.is_admin else {"installed": info["installed"]}
+
+    @app.put("/api/update", tags=["system"])
+    def put_update(body: UpdateSwitch, user: User = Depends(require_admin)):
+        if app.state.update_check.public()["locked"]:
+            raise HTTPException(status_code=409, detail="switched off by VERSIONSPRUEFUNG=0")
+        return app.state.update_check.set_enabled(body.on)
+
+    @app.post("/api/update/check", tags=["system"])
+    def check_update(user: User = Depends(require_admin)):
+        if not app.state.update_check.enabled():
+            raise HTTPException(status_code=409, detail="update check is switched off")
+        return app.state.update_check.check()
 
     @app.post("/api/rescan", tags=["system"])
     def rescan(user: User = Depends(require_admin)):
@@ -897,6 +986,25 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
             raise HTTPException(status_code=400, detail="month must be YYYY-MM")
         return index.month(pick_areas(user, areas), month, **chosen)
 
+    @app.get("/api/start", tags=["photos"])
+    def start_page(areas: str | None = Query(None), limit: int = Query(24, ge=1, le=200),
+                   user: User = Depends(current_user)):
+        """What the start page shows: the pictures that came in last, and the albums pinned to it."""
+        chosen = pick_areas(user, areas)
+        albums = {a["path"]: a for a in index.album_tree(chosen)}
+        pins = []
+        for path in app.state.user_prefs.get(user.name)["pins"]:
+            album = albums.get(path)
+            if album:       # an album nobody can see from here, or one that is gone, is left out
+                pins.append({"path": path, "name": album["name"], "count": album["total"],
+                             "cover": index.cover(chosen, album=path)})
+        return {"recent": index.recent(chosen, limit), "pins": pins}
+
+    @app.get("/api/sequence", tags=["photos"])
+    def sequence(areas: str | None = Query(None), chosen: dict = Depends(filters), user: User = Depends(current_user)):
+        """Everything a choice holds in one list, oldest first – for looking at it picture by picture."""
+        return index.sequence(pick_areas(user, areas), **chosen)
+
     def photo_or_404(key: str, user: User) -> dict:
         photo = index.photo(key, allowed_areas(user))
         if not photo:
@@ -928,6 +1036,9 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
             data["recipe"] = {}
         data["can_delete"] = not settings.readonly and user.can_write(data["area"])
         data["can_write"] = data["can_delete"] and data["kind"] == "image" and data["ext"] not in RAW_EXT
+        # date, place and words: pictures and the films whose boxes can be written
+        data["can_change"] = data["can_write"] or (data["can_delete"] and data["kind"] == "video"
+                                                    and data["ext"] in FILM_EXT)
         data["can_turn"] = data["can_write"] and data["ext"] in ("jpg", "jpeg", "heic", "heif")
         data["can_develop"] = data["can_write"] and data["ext"] != "gif" and not data["error"]
         data["inbox"] = data["area"] in app.state.inbox.areas()       # sent by the phone, not sorted yet
@@ -1130,6 +1241,25 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         chosen = pick_areas(user, areas)
         faces = people.covers(face_scope(chosen), prefs.load()["covers"])
         return [dict(person, face=faces.get(person["name"])) for person in index.people(chosen)]
+
+    @app.get("/api/spots", tags=["changes"])
+    def spots(user: User = Depends(current_user)):
+        """The places one picks again and again – home, the parents, the holiday flat."""
+        return prefs.load()["spots"]
+
+    @app.put("/api/spots", tags=["changes"])
+    def save_spots(body: SpotsIn, user: User = Depends(require_admin)):
+        """Replace the list of fixed places. Nothing is written to a photo."""
+        clean, seen = [], set()
+        for spot in body.spots:
+            name = " ".join(spot.name.split())
+            if not name:
+                raise HTTPException(status_code=422, detail="a place needs a name")
+            if name.casefold() in seen:
+                raise HTTPException(status_code=422, detail="place name used twice")
+            seen.add(name.casefold())
+            clean.append({"name": name, "lat": round(spot.lat, 6), "lon": round(spot.lon, 6)})
+        return prefs.save(spots=clean)["spots"]
 
     @app.put("/api/people/cover", tags=["people"])
     def person_cover(body: Cover, user: User = Depends(current_user)):
@@ -1355,8 +1485,21 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     app.state.job = {"kind": "", "running": False, "done": 0, "total": 0, "failed": 0, "errors": [], "what": "",
                      "stop": False, "started": 0.0, "ended": 0.0}
 
-    def start_job(kind: str, what: str, items: list, work) -> None:
-        """One long job at a time, in the background; the page asks how far it is."""
+    def picture_key(item: dict, path: str) -> str:
+        """So the page can open the picture a job could not change. Not every item is a picture."""
+        if item.get("key"):
+            return str(item["key"])
+        try:
+            photo = index.by_path(path) if path else None
+        except Exception:
+            photo = None
+        return photo["key"] if photo else ""
+
+    def start_job(kind: str, what: str, items: list, work, after=None) -> None:
+        """One long job at a time, in the background; the page asks how far it is.
+
+        `after` runs when the job has come to its end by itself or was broken off by somebody –
+        not when the whole program is stopped under it."""
         job = app.state.job
         if job["running"]:
             raise HTTPException(status_code=409, detail="another job is running")
@@ -1373,10 +1516,13 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
                     except Exception as exc:
                         job["failed"] += 1
                         if len(job["errors"]) < 30:
-                            job["errors"].append({"path": item.get("path", ""), "error": str(exc)[:200]})
+                            path = item.get("path", "")
+                            job["errors"].append({"path": path, "key": picture_key(item, path), "error": str(exc)[:200]})
                     job["done"] += 1
             finally:
                 job.update(running=False, ended=time.time())
+                if after:
+                    after()
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -1602,6 +1748,14 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
     def stop_job(user: User = Depends(require_admin)):
         """Break off the long job that is running. What it has done so far stays."""
         app.state.job["stop"] = True
+        return {"ok": True}
+
+    @app.post("/api/job/seen", tags=["system"])
+    def job_seen(user: User = Depends(require_admin)):
+        """The pictures the last job left alone have been looked at: take them off the list.
+        The count in the summary stays."""
+        if not app.state.job["running"]:
+            app.state.job["errors"] = []
         return {"ok": True}
 
     @app.get("/api/job", tags=["system"])
@@ -1899,9 +2053,20 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
             raise AIError("the picture cannot be read") from exc
         except Exception as exc:
             raise AIError("the picture cannot be read") from exc
-        prompt = photo_prompt(photo, task, index.common_keywords([photo["area"]]))
+        prompt = photo_prompt(photo, task, index.common_keywords([photo["area"]]), prefs.load()["spots"])
         answer = ai.complete(in_language(PHOTO_SYSTEM, lang), prompt, max_tokens=4000, images=[picture], model=model)
-        return {**parse_suggestion(answer.text), "model": answer.model, "seconds": answer.seconds, "cost": answer.cost}
+        idea = parse_suggestion(answer.text)
+        place = idea["place"]
+        if place and photo["area"] in index.no_places:
+            idea["place"] = place = None            # a place makes no sense there (screenshots and the like)
+        if place:
+            if not place["name"]:
+                place["name"] = ", ".join(part for part in index.geo.lookup(place["lat"], place["lon"])[::2] if part)
+            if photo.get("lat") is not None:
+                # the picture knows where it was taken: the guess only counts as a doubt about it
+                place["km"] = round(distance_km(photo["lat"], photo["lon"], place["lat"], place["lon"]))
+                place["far"] = place["km"] > FAR_KM
+        return {**idea, "model": answer.model, "seconds": answer.seconds, "cost": answer.cost}
 
     # ------------------------------------------------------------- the pictures that are there already
 
@@ -1948,11 +2113,21 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         config = ai.load()
         if not config.enabled:
             raise HTTPException(status_code=422, detail="AI is disabled")
+        return stock_start(user, lang, (body.model or "").strip(), body.areas, body.limit)
+
+    # A run over the whole stock takes longer than a day, and a server is restarted in between
+    # (an update, the nightly backup). While a run is under way a note lies in the data folder;
+    # it goes when the run ends or somebody breaks it off. If it is still there at the start,
+    # the run was cut short and goes on with the pictures that still have no keywords.
+    STOCK_NOTE = settings.data / "aistock.json"
+
+    def stock_start(user: User, lang: str, wanted: str, areas: list[str] | None, limit: int | None) -> dict:
+        config = ai.load()
         items = stock_waiting(user)
-        if body.areas:
-            items = [item for item in items if item["area"] in body.areas]
-        items = items[:body.limit] if body.limit else items
-        model = stock_model(config, (body.model or "").strip())
+        if areas:
+            items = [item for item in items if item["area"] in areas]
+        items = items[:limit] if limit else items
+        model = stock_model(config, wanted)
         offered, default = prompts_of(config, lang)
         task = next((p["text"] for p in offered if p["name"].casefold() == default.casefold()), offered[0]["text"])
         batch = secrets.token_hex(6)
@@ -1977,8 +2152,37 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
                 raise AIError("the AI found nothing to say")
             editor.change(photo, change, STOCK_USER, batch)
 
-        start_job("aistock", MODEL_LABELS.get(model, model), items, work)
+        if job["running"]:
+            raise HTTPException(status_code=409, detail="another job is running")
+        if items and not limit:                     # a trial run of a few pictures is not worth picking up again
+            note = json.dumps({"user": user.name, "lang": lang, "model": wanted, "areas": areas or []})
+            STOCK_NOTE.write_text(note, encoding="utf-8")
+        start_job("aistock", MODEL_LABELS.get(model, model), items, work,
+                  after=lambda: STOCK_NOTE.unlink(missing_ok=True))
         return {"total": len(items), "model": model}
+
+    def resume_stock() -> bool:
+        """Go on with a run over the stock that a restart has cut short. True if one was started."""
+        try:
+            note = json.loads(STOCK_NOTE.read_text(encoding="utf-8"))
+            user = User(name=str(note["user"]), is_admin=True)      # only an administrator can have started it
+            lang, wanted, areas = known_lang(str(note.get("lang", ""))), str(note.get("model", "")), list(note.get("areas") or [])
+        except FileNotFoundError:
+            return False
+        except (ValueError, KeyError, TypeError):
+            STOCK_NOTE.unlink(missing_ok=True)
+            return False
+        if settings.readonly or not ai.load().enabled:
+            STOCK_NOTE.unlink(missing_ok=True)
+            return False
+        try:
+            total = stock_start(user, lang, wanted, areas, None)["total"]
+        except HTTPException:                       # another job got there first; the note stays for next time
+            return False
+        log.info("the AI goes on describing the stock after a restart: %s pictures left", total)
+        return total > 0
+
+    app.state.resume_stock = resume_stock
 
     # ------------------------------------------------------------- inbox
 
@@ -2075,7 +2279,7 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         if not area or area in inbox_areas or area not in allowed_areas(user) or not user.can_write(area):
             raise HTTPException(status_code=403, detail="no write access to this area")
         single = len(body.keys) == 1 and (body.description is not None or body.keywords is not None
-                                          or body.taken is not None)
+                                          or body.taken is not None or body.lat is not None)
 
         def accept_one(photo: dict) -> dict:
             if photo["area"] not in inbox_areas:
@@ -2088,6 +2292,8 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
                     change["add_keywords"] = body.keywords
                 if body.taken and photo["taken_src"] != "exif":
                     change["taken"] = body.taken
+                if body.lat is not None and body.lon is not None and photo.get("lat") is None:
+                    change["lat"], change["lon"] = body.lat, body.lon
             elif body.take:
                 idea = proposals.get(photo["path"]) or {}
                 if idea.get("description") and not (photo.get("description") or "").strip():
@@ -2237,6 +2443,31 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         app.state.user_prefs.forget(name)
         app.state.sessions.revoke(name)
         return {"ok": True}
+
+    # ----------------------------------------------- AI assistants (MCP)
+
+    @app.get("/api/mcp/settings", tags=["mcp"])
+    def get_mcp(user: User = Depends(require_admin)):
+        """Whether the MCP endpoint for AI assistants is on – off in a fresh installation."""
+        return {"on": bool(prefs.load()["mcp"]), "path": "/api/mcp"}
+
+    @app.put("/api/mcp/settings", tags=["mcp"])
+    def put_mcp(body: McpSwitch, user: User = Depends(require_admin)):
+        prefs.save(mcp=body.on)
+        return get_mcp(user)
+
+    # the same functions again as tools for an AI assistant (Model Context Protocol)
+    from types import SimpleNamespace
+
+    from .mcp import mount_mcp
+    mount_mcp(app, SimpleNamespace(
+        areas=areas, tree=tree, albums=albums, people_list=people_list, place_names=place_names, cameras=cameras,
+        creators=creators, filters=filters, timeline=timeline, sequence=sequence, photo=photo,
+        photo_thumb=photo_thumb, photo_faces=photo_faces, list_memories=list_memories, journal_list=journal_list,
+        trash_list=trash_list, change_many=change_many, turn_many=turn_many, name_face=name_face, move_many=move_many,
+        inbox_accept=inbox_accept, delete_many=delete_many,
+        trash_restore=trash_restore, journal_undo=journal_undo, writable_areas=lambda user: [] if settings.readonly
+        else [a for a in allowed_areas(user) if user.can_write(a)]))
 
     # -------------------------------------------------------- middleware
 

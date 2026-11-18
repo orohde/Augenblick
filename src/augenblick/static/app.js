@@ -80,6 +80,8 @@ const State = {
   dirty: false,              // something was changed while the viewer was open
   stale: false,              // … or while another page was shown
   ai: { enabled: false, prompts: [], default: '', excluded_areas: [], memories: false },
+  start: false,              // the start page is shown
+  pins: [],                  // albums pinned to the start page, in their order – they follow the account
 };
 
 // ----------------------------------------------------------------- theme
@@ -195,14 +197,18 @@ async function start() {
   State.active = new Set(remembered ? names.filter((n) => remembered.includes(n)) : names);
   if (!State.active.size) State.active = new Set(names);
   $('chk-recursive').checked = State.recursive;
+  if (!location.hash || location.hash === '#') history.replaceState(null, '', '#/start');      // '#/' stays the timeline
+  try { State.pins = (await api('me/prefs')).pins || []; } catch { State.pins = []; }
   route();
   renderChips();
   applyView();
   loadTrashCount();
   loadAiOffer();
+  loadSpots();
   loadFaceSearch();
   await Promise.all([loadTree(), loadCameras(), loadPlaceNames(), reload()]);
   pollStatus();
+  loadUpdate();
 }
 
 // The inbox is the area the phone uploads to. Its pictures are not part of the collection yet:
@@ -322,7 +328,7 @@ async function loadAlbums() {
 async function loadAuto() {
   loadMemories();
   // the server names the categories in German; here they get the name of the chosen language
-  const names = { videos: t('Videos'), live: t('Live Photos'), panoramen: t('Panoramen'), favoriten: t('Favoriten'), raw: t('RAW'), heute: t('An diesem Tag') };
+  const names = { videos: t('Videos'), live: t('Live Photos'), panoramen: t('Panoramen'), favoriten: t('Favoriten'), raw: t('RAW'), heute: t('An diesem Tag'), neu: t('Neu hinzugekommen') };
   try {
     State.autos = (await api('auto?areas=' + encodeURIComponent(areaQuery()), { quiet: true })).map((entry) => ({ ...entry, name: names[entry.id] || entry.name }));
   } catch { return; }
@@ -363,6 +369,7 @@ function memoryCard(memory) {
 function renderMemories() {
   const all = State.memories || [];
   const back = all.filter((m) => m.kind === 'back'); const journeys = all.filter((m) => m.kind === 'journey');
+  leaveStart();
   $('grid-panel').classList.add('is-memories');
   $('memories').hidden = false;
   $('mem-tools').hidden = $('mem-text').hidden = true;
@@ -375,6 +382,7 @@ function renderMemories() {
 }
 function showMemoryHead() {        // above the pictures of one memory: what it is, and what can be done with it
   const memory = shownMemory();
+  leaveStart();
   $('grid-panel').classList.remove('is-memories');
   $('memories').hidden = true;
   $('mem-tools').hidden = !memory;
@@ -389,6 +397,79 @@ function showMemoryHead() {        // above the pictures of one memory: what it 
   $('mem-unai').hidden = !(may && memory.by_ai);
 }
 $('mem-pick').addEventListener('click', () => { State.memPicked = !State.memPicked; reload(); });
+
+// ----------------------------------------------------------------- start page
+// What came in last (by when it came, not when it was taken), a few memories, and the albums pinned here.
+
+const Start = { recent: [] };
+function leaveStart() {
+  $('grid-panel').classList.remove('is-start');
+  $('start').hidden = true;
+}
+function pinCard(pin) {
+  const above = pin.path.includes('/') ? pin.path.slice(0, pin.path.lastIndexOf('/')) : '';
+  const count = pin.count === 1 ? t('1 Bild') : t('{0} Bilder', [number(pin.count)]);
+  return el('a', { class: 'mem-card mem-card--album', href: albumHref(pin.path), title: pin.path },
+    pin.cover ? el('img', { src: thumbUrl(pin.cover), loading: 'lazy', decoding: 'async', alt: '' }) : null,
+    el('span', { class: 'mem-card__words' }, el('span', { class: 'mem-card__title' }, pin.name),
+      el('span', { class: 'mem-card__sub' }, above ? `${above} · ${count}` : count)));
+}
+async function renderStart() {
+  const panel = $('grid-panel');
+  const generation = State.generation;
+  panel.classList.remove('is-memories');
+  panel.classList.add('is-start');
+  $('start').hidden = false;
+  $('memories').hidden = $('mem-tools').hidden = $('mem-text').hidden = $('grid-empty').hidden = true;
+  $('btn-rename-person').hidden = $('btn-to-album').hidden = $('btn-pin').hidden = $('btn-show').hidden = true;
+  $('grid-title').textContent = t('Startseite');
+  $('grid-count').textContent = '';
+  $('years').hidden = true;
+  let data;
+  try { data = await api('start?areas=' + encodeURIComponent(areaQuery())); } catch { return; }
+  if (generation !== State.generation || !State.start) return;
+  Start.recent = data.recent;
+  $('start-recent').replaceChildren(...data.recent.map(tile));
+  $('start-recent').dataset.filled = '1';
+  $('start-norecent').hidden = data.recent.length > 0;
+  $('start-show').hidden = !data.recent.length;
+  $('start-pins').replaceChildren(...data.pins.map(pinCard));
+  $('start-nopins').hidden = data.pins.length > 0;
+  if (State.memories === null) await loadMemories();
+  if (generation !== State.generation) return;
+  const all = State.memories || [];
+  const some = [...all.filter((m) => m.kind === 'back'), ...all.filter((m) => m.kind === 'journey')].slice(0, 4);
+  $('start-mem-box').hidden = !some.length;
+  $('start-mems').replaceChildren(...some.map(memoryCard));
+  layout();
+  panel.scrollTop = 0;
+}
+$('start-recent').addEventListener('click', (event) => {
+  const button = event.target.closest('.tile');
+  if (button) openViewer(button.dataset.key, null, Start.recent);
+});
+$('start-show').addEventListener('click', () => openShow(async () => Start.recent));
+
+// Pins: an album on the start page. They belong to the account, so they are the same on every device.
+const isPinned = (path) => State.pins.includes(path);
+async function setPin(path, on) {
+  const pins = State.pins.filter((p) => p !== path);
+  if (on) pins.push(path);
+  try { State.pins = (await api('me/prefs', { method: 'PUT', body: JSON.stringify({ pins }) })).pins; }
+  catch (err) { window.alert(t('Das hat nicht geklappt: {0}', [err.message])); return; }
+  showPinButton();
+}
+function showPinButton() {
+  const button = $('btn-pin');
+  button.hidden = !State.album || State.inbox || State.start;
+  const on = isPinned(State.album);
+  button.textContent = on ? '★' : '☆';
+  button.classList.toggle('is-on', on);
+  button.setAttribute('aria-pressed', String(on));
+  button.title = on ? t('Von der Startseite lösen') : t('An die Startseite pinnen');
+  button.setAttribute('aria-label', button.title);
+}
+$('btn-pin').addEventListener('click', () => { if (State.album) setPin(State.album, !isPinned(State.album)); });
 async function memoryAI(method) {
   const memory = shownMemory();
   if (!memory) return;
@@ -453,7 +534,8 @@ function renderAlbums() {
       'aria-expanded': folds ? String(open) : null,
       oncontextmenu: (event) => {
         event.preventDefault();
-        showMenu(event.clientX, event.clientY, [[t('Öffnen'), () => { location.hash = albumHref(node.path); }]]);
+        showMenu(event.clientX, event.clientY, [[t('Öffnen'), () => { location.hash = albumHref(node.path); }],
+          [isPinned(node.path) ? t('Von der Startseite lösen') : t('An die Startseite pinnen'), () => setPin(node.path, !isPinned(node.path))]]);
       },
       onclick: () => {
         if (folds && !open) { State.openAlbums.add(node.path); store.set('openAlbums', [...State.openAlbums]); }
@@ -750,6 +832,7 @@ function layout() {
   // rows are filled, which makes them higher than asked for – so ask for a little less than the size chosen
   const high = tile * 0.8;
   $('grid').style.setProperty('--tile', `${high}px`);
+  $('start').style.setProperty('--tile', `${high}px`);
   for (const grid of document.querySelectorAll('.month__grid')) {
     if (grid.dataset.filled) { grid.style.minHeight = ''; continue; }      // its pictures say how high it is
     // not loaded yet: room for about as many rows as it will need, pictures being a third wider than high on average
@@ -762,6 +845,7 @@ window.addEventListener('resize', layout);
 const monthTitle = (month) => new Date(month + '-01T12:00:00').toLocaleDateString(LOCALE, { month: 'long', year: 'numeric' });
 
 async function reload(keepScroll = false) {
+  if (State.start) { ++State.generation; renderStart(); return; }
   if ((State.memList || State.memory) && State.memories === null) await loadMemories();     // opened by its address
   if (State.memList) { ++State.generation; renderMemories(); return; }
   showMemoryHead();
@@ -794,6 +878,8 @@ async function reload(keepScroll = false) {
     : State.folder && !(State.inbox && !State.folder.includes('/')) ? State.folder.split('/').pop() : State.inbox ? t('Eingang') : t('Zeitleiste');
   $('btn-rename-person').hidden = !(State.person && State.me.write.length && State.people.some((p) => p.name === State.person));
   $('btn-to-album').hidden = !(State.folder.includes('/') && State.me.write.includes(State.folder.split('/')[0]));
+  $('btn-show').hidden = !total;
+  showPinButton();
   State.total = total;
   showGridCount();
   $('grid-empty').hidden = total > 0;
@@ -1054,7 +1140,7 @@ $('grid-panel').addEventListener('scroll', () => {
 
 // ----------------------------------------------------------------- viewer
 
-const Viewer = { key: null, month: null, photo: null, faces: [] };
+const Viewer = { key: null, month: null, list: null, photo: null, faces: [] };     // list: a page's own order (the start page)
 
 async function monthItems(month) {
   if (!State.items.has(month)) State.items.set(month, await api(`photos?month=${month}&${query()}`));
@@ -1062,6 +1148,10 @@ async function monthItems(month) {
 }
 
 async function neighbour(step) {
+  if (Viewer.list) {
+    const at = Viewer.list.findIndex((i) => i.key === Viewer.key) + step;
+    return at >= 0 && at < Viewer.list.length ? { key: Viewer.list[at].key, month: null } : null;
+  }
   if (!Viewer.month) return null;       // opened from a page that has no order of its own
   const items = await monthItems(Viewer.month);
   const at = items.findIndex((i) => i.key === Viewer.key) + step;
@@ -1081,9 +1171,10 @@ const DATE_SOURCE = {
   exif: '', name: t('aus dem Dateinamen, im Bild steht keins'), file: t('Dateidatum, im Bild steht keins'),
 };
 
-async function openViewer(key, month) {
+async function openViewer(key, month, list = null) {
   Viewer.key = key;
   Viewer.month = month;
+  Viewer.list = list;
   $('viewer').hidden = false;
   const img = $('v-img'); const video = $('v-video');
   video.pause();
@@ -1101,11 +1192,11 @@ function showPhoto(photo) {
   Viewer.photo = photo;
   img.hidden = video.hidden = $('v-broken').hidden = true;
   $('v-tools').hidden = !photo.can_delete;
-  $('v-edit').hidden = !photo.can_write;
+  $('v-edit').hidden = !photo.can_change;
   $('v-develop').hidden = !photo.can_develop;
   $('v-develop').textContent = photo.original ? t('Bild weiter bearbeiten') : t('Bild bearbeiten');
   devClose();
-  $('v-ai-box').hidden = !(State.ai.enabled && photo.can_write && !photo.error && !State.ai.excluded_areas.includes(photo.area));
+  $('v-ai-box').hidden = !(State.ai.enabled && photo.can_write && photo.kind === 'image' && !photo.error && !State.ai.excluded_areas.includes(photo.area));
   showTake(photo);
   $('v-left').hidden = $('v-right').hidden = !photo.can_turn;
   $('v-form').hidden = true;
@@ -1144,13 +1235,14 @@ function showPhoto(photo) {
   }
   if (photo.rating > 0) fact(facts, t('Bewertung'), '★'.repeat(photo.rating) + '☆'.repeat(5 - photo.rating));
   if (photo.lat !== null && photo.lon !== null) {
-    const named = [photo.city, photo.state, photo.country].filter(Boolean).join(', ');
+    const spot = spotAt(photo.lat, photo.lon);
+    const named = [spot && spot.name, photo.city, photo.state, photo.country].filter(Boolean).join(', ');
     fact(facts, t('Ort'), named ? el('div', { title: t('nächster Ort zu den Koordinaten im Bild') }, named) : null,
       el('a', { href: `https://www.openstreetmap.org/?mlat=${photo.lat}&mlon=${photo.lon}#map=15/${photo.lat}/${photo.lon}`, target: '_blank', rel: 'noopener noreferrer' },
         `${photo.lat.toFixed(5)}, ${photo.lon.toFixed(5)}`), el('span', { class: 'hint' }, t('öffnet OpenStreetMap')));
   } else {
     // the place is set in the edit form – say so right here, and open the map at once
-    fact(facts, t('Ort'), el('span', { class: 'hint' }, t('kein Ort im Bild')), photo.can_write ? el('button', {
+    fact(facts, t('Ort'), el('span', { class: 'hint' }, t('kein Ort im Bild')), photo.can_change ? el('button', {
       class: 'fd-button fd-button--compact', type: 'button', onclick: () => { $('v-edit').click(); $('e-map').click(); },
     }, t('Ort wählen')) : null);
   }
@@ -1166,6 +1258,7 @@ function showPhoto(photo) {
   if (photo.orientation > 1) fact(facts, t('Ausrichtung'), t('per Markierung gedreht'), el('span', { class: 'hint' }, t('die Bilddaten selbst sind unverändert')));
   if (photo.error) fact(facts, t('Fehler'), photo.error);
 
+  $('v-show').hidden = !(Viewer.list || Viewer.month);
   neighbour(-1).then((n) => { if (Viewer.key === key) $('v-prev').disabled = !n; });
   neighbour(1).then((n) => {
     if (Viewer.key !== key) return;
@@ -1386,7 +1479,7 @@ $('v-video').addEventListener('error', () => {
 
 async function step(direction) {
   const next = await neighbour(direction);
-  if (next) openViewer(next.key, next.month);
+  if (next) openViewer(next.key, next.month, Viewer.list);
 }
 
 function closeViewer() {
@@ -1412,7 +1505,260 @@ document.addEventListener('keydown', (event) => {
   else if (event.key === 'ArrowLeft') step(-1);
   else if (event.key === 'ArrowRight') step(1);
   else if (event.key === 'Delete' && Viewer.photo && Viewer.photo.can_delete) deleteShown();
+  else if ((event.key === 'f' || event.key === 'F') && !event.metaKey && !event.ctrlKey && !$('v-show').hidden) showFromViewer();
 });
+
+// ----------------------------------------------------------------- looking at pictures
+// Nothing but the picture, as big as the screen allows: leafing by hand or as a slide show. The working
+// view with its side panel stays as it is – this is for sitting back. How long a picture stands, the order
+// and the line about it are remembered in this browser, like the other sizes of the screen.
+
+const Show = {
+  items: [], order: [], at: 0, playing: false, timer: 0, idle: 0, token: 0, front: 'show-a', from: null, list: null,
+  full: false, wake: null, down: null, onBar: false,
+  secs: store.get('show.secs', 5), shuffle: store.get('show.shuffle', false), info: store.get('show.info', true),
+};
+const showItem = () => Show.items[Show.order[Show.at]];
+
+/* `load` hands back the pictures; it is asked for only after the screen has gone dark, because the browser
+   allows the whole screen only right after a click. */
+async function openShow(load, startKey = null, from = null) {
+  const box = $('show');
+  if (!box.hidden) return;
+  Show.from = from;
+  Show.list = from && from.list;
+  Show.token++;
+  box.hidden = false;
+  box.classList.remove('is-idle');
+  $('show-caption').hidden = true;
+  $('show-pos').textContent = '';
+  const ask = box.requestFullscreen || box.webkitRequestFullscreen;
+  if (ask) { try { const pending = ask.call(box); if (pending && pending.catch) pending.catch(() => {}); } catch { /* the page fills the window instead */ } }
+  let items;
+  try { items = await load(); } catch { items = []; }
+  if (box.hidden) return;
+  if (!items || !items.length) { closeShow(); return; }
+  Show.items = items;
+  const start = Math.max(0, items.findIndex((i) => i.key === startKey));
+  shuffleShow(start);
+  paintShowBar();
+  showPlay(store.get('show.play', false), false);
+  showCurrent();
+  poke();
+  box.focus();
+}
+
+function shuffleShow(start) {
+  const n = Show.items.length;
+  Show.order = [...Array(n).keys()];
+  Show.at = start;
+  if (!Show.shuffle) return;
+  for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [Show.order[i], Show.order[j]] = [Show.order[j], Show.order[i]]; }
+  const here = Show.order.indexOf(start);           // the picture one started from comes first
+  [Show.order[0], Show.order[here]] = [Show.order[here], Show.order[0]];
+  Show.at = 0;
+}
+
+function showCaption(item) {
+  const day = new Date(item.taken).toLocaleDateString(LOCALE, { day: 'numeric', month: 'long', year: 'numeric' });
+  const place = [item.city, item.country].filter(Boolean).join(', ');
+  $('show-caption').replaceChildren(el('span', {}, [day, place].filter(Boolean).join(' · ')),
+    ...(item.desc ? [el('span', { class: 'show__desc' }, item.desc)] : []));
+  $('show-caption').hidden = !Show.info;
+}
+
+function showCurrent() {
+  clearTimeout(Show.timer);
+  const item = showItem();
+  if (!item) return;
+  const token = ++Show.token;
+  $('show-pos').textContent = `${number(Show.at + 1)} / ${number(Show.items.length)}`;
+  showCaption(item);
+  const video = $('show-video');
+  video.pause();
+  $('show').classList.toggle('is-video', item.kind === 'video');      // the bar makes way for the film's own controls
+  if (item.kind === 'video') {        // a film plays to its end; then the show goes on, if it runs
+    for (const id of ['show-a', 'show-b']) $(id).classList.remove('is-on');
+    video.hidden = false;
+    video.src = `api/photos/${item.key}/file`;
+    video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+    return;
+  }
+  video.removeAttribute('src');
+  video.hidden = true;
+  const next = $(Show.front === 'show-a' ? 'show-b' : 'show-a');
+  next.src = previewUrl({ key: item.key, orientation: item.o });
+  const swap = () => {
+    if (token !== Show.token) return;
+    $(Show.front).classList.remove('is-on');
+    next.classList.add('is-on');
+    Show.front = next.id;
+    const after = Show.items[Show.order[(Show.at + 1) % Show.order.length]];
+    if (after && after.kind !== 'video') new Image().src = previewUrl({ key: after.key, orientation: after.o });
+    planShow();
+  };
+  next.decode().then(swap, swap);      // one that cannot be shown does not stop the show
+}
+
+function planShow() {
+  clearTimeout(Show.timer);
+  const item = showItem();
+  if (Show.playing && item && item.kind !== 'video') Show.timer = setTimeout(() => goShow(1), Show.secs * 1000);
+}
+
+function goShow(step) {
+  const n = Show.order.length;
+  if (!n) return;
+  Show.at = (Show.at + step + n) % n;      // at the end it starts again
+  showCurrent();
+}
+
+function showPlay(on, remember = true) {
+  Show.playing = on;
+  if (remember) store.set('show.play', on);
+  const button = $('show-play');
+  button.textContent = on ? '❚❚' : '▶';
+  button.title = on ? t('Diashow anhalten (Leertaste)') : t('Diashow starten (Leertaste)');
+  button.setAttribute('aria-label', button.title);
+  keepAwake(on);
+  planShow();
+}
+
+async function keepAwake(on) {        // a running show keeps the screen from going dark
+  try {
+    if (on && !Show.wake && navigator.wakeLock) {
+      Show.wake = await navigator.wakeLock.request('screen');
+      Show.wake.addEventListener('release', () => { Show.wake = null; });      // the browser lets go when the tab is hidden
+    }
+    if (!on && Show.wake) { await Show.wake.release(); Show.wake = null; }
+  } catch { Show.wake = null; }
+}
+
+function paintShowBar() {
+  $('show-secs').value = String(Show.secs);
+  $('show-shuffle').classList.toggle('is-on', Show.shuffle);
+  $('show-shuffle').setAttribute('aria-pressed', String(Show.shuffle));
+  $('show-info').classList.toggle('is-on', Show.info);
+  $('show-info').setAttribute('aria-pressed', String(Show.info));
+}
+
+function poke() {       // the bar and the pointer come back with every move, and go after a moment of rest
+  const box = $('show');
+  box.classList.remove('is-idle');
+  clearTimeout(Show.idle);
+  Show.idle = setTimeout(() => { if (!Show.onBar) box.classList.add('is-idle'); }, 2500);
+}
+
+function closeShow() {
+  const box = $('show');
+  if (box.hidden) return;
+  clearTimeout(Show.timer);
+  clearTimeout(Show.idle);
+  Show.token++;
+  Show.full = false;
+  keepAwake(false);
+  const video = $('show-video');
+  video.pause();
+  video.removeAttribute('src');
+  video.hidden = true;
+  for (const id of ['show-a', 'show-b']) { $(id).classList.remove('is-on'); $(id).removeAttribute('src'); }
+  box.hidden = true;
+  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+  else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+  const item = showItem();
+  Show.items = []; Show.order = [];
+  if (Show.from && item) { openViewer(item.key, Show.list ? null : item.month, Show.list); return; }     // back where one came from, at the last picture
+  const button = item && document.querySelector(`.tile[data-key="${item.key}"]`);
+  if (button) button.focus();
+}
+
+function showFromViewer() {
+  const list = Viewer.list;
+  const key = Viewer.key;
+  const asked = query();
+  $('v-video').pause();
+  $('viewer').hidden = true;
+  openShow(list ? async () => list : () => api('sequence?' + asked), key, { list });
+}
+
+const showSelection = () => { const keys = new Set(State.selected); return openShow(async () => (await api('sequence?' + query())).filter((i) => keys.has(i.key))); };
+$('btn-show').addEventListener('click', () => openShow(() => api('sequence?' + query())));
+$('v-show').addEventListener('click', showFromViewer);
+$('sel-show').addEventListener('click', () => { if (State.selected.size) showSelection(); });
+
+for (const id of ['show-prev', 'show-next', 'show-play', 'show-shuffle', 'show-info', 'show-close']) {
+  $(id).addEventListener('click', (event) => {
+    event.currentTarget.blur();          // a space bar on a button that still has the focus would click it again
+    if (id === 'show-prev') goShow(-1);
+    else if (id === 'show-next') goShow(1);
+    else if (id === 'show-play') showPlay(!Show.playing);
+    else if (id === 'show-close') closeShow();
+    else if (id === 'show-shuffle') {
+      Show.shuffle = !Show.shuffle;
+      store.set('show.shuffle', Show.shuffle);
+      const item = Show.order[Show.at];
+      shuffleShow(item);
+      paintShowBar();
+      $('show-pos').textContent = `${number(Show.at + 1)} / ${number(Show.items.length)}`;
+      planShow();
+    } else {
+      Show.info = !Show.info;
+      store.set('show.info', Show.info);
+      paintShowBar();
+      $('show-caption').hidden = !Show.info;
+    }
+  });
+}
+$('show-secs').addEventListener('change', () => {
+  Show.secs = Number($('show-secs').value) || 5;
+  store.set('show.secs', Show.secs);
+  planShow();
+  $('show-secs').blur();
+});
+$('show-video').addEventListener('ended', () => { if (Show.playing) goShow(1); });
+$('show-video').addEventListener('error', () => { if (!$('show').hidden && Show.playing) Show.timer = setTimeout(() => goShow(1), 1500); });
+$('show-bar').addEventListener('pointerenter', () => { Show.onBar = true; });
+$('show-bar').addEventListener('pointerleave', () => { Show.onBar = false; poke(); });
+$('show').addEventListener('pointermove', poke);
+// a tap on the left or right third leafs; a swipe does the same on a phone; the middle brings the bar back
+$('show').addEventListener('pointerdown', (event) => {
+  Show.down = event.target.closest('#show-bar') || event.target.tagName === 'VIDEO' ? null : { x: event.clientX, y: event.clientY };
+});
+$('show').addEventListener('pointerup', (event) => {
+  const down = Show.down;
+  Show.down = null;
+  if (!down) return;
+  const dx = event.clientX - down.x; const dy = event.clientY - down.y;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { goShow(dx < 0 ? 1 : -1); return; }
+  if (Math.abs(dx) > 10 || Math.abs(dy) > 10) return;
+  const third = window.innerWidth / 3;
+  if (event.clientX < third) goShow(-1);
+  else if (event.clientX > 2 * third) goShow(1);
+  else poke();
+});
+document.addEventListener('keydown', (event) => {
+  if ($('show').hidden || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.target.tagName === 'SELECT' && event.key !== 'Escape') return;
+  const key = event.key;
+  if (key === 'Escape') closeShow();
+  else if (key === 'ArrowRight' || key === 'PageDown') goShow(1);
+  else if (key === 'ArrowLeft' || key === 'PageUp') goShow(-1);
+  else if (key === ' ') showPlay(!Show.playing);
+  else if (key === 'i' || key === 'I') $('show-info').click();
+  else return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  poke();
+}, true);
+// leaving the whole screen (Esc, a gesture of the system) ends the show
+for (const name of ['fullscreenchange', 'webkitfullscreenchange']) {
+  document.addEventListener(name, () => {
+    const full = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    if (full) Show.full = true;
+    else if (Show.full) { Show.full = false; closeShow(); }
+  });
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Show.playing && !$('show').hidden) keepAwake(true); });
 
 // ----------------------------------------------------------------- routing
 
@@ -1448,12 +1794,14 @@ function route() {
   const auto = rest.startsWith('auto/') ? rest.slice(5) : '';
   const memory = rest.startsWith('erinnerung/') ? rest.slice(11) : '';
   const memList = rest === 'erinnerungen';
-  const changed = folder !== State.folder || album !== State.album || person !== State.person || inbox !== State.inbox || auto !== State.auto
+  const startPage = hash === 'start';
+  const changed = startPage !== State.start || folder !== State.folder || album !== State.album || person !== State.person || inbox !== State.inbox || auto !== State.auto
     || memory !== State.memory || memList !== State.memList;
   if (memory !== State.memory) State.memPicked = true;
   State.auto = auto;
   State.memory = memory;
   State.memList = memList;
+  State.start = startPage;
   if (inbox !== State.inbox && State.selecting) setSelecting(false);
   State.inbox = inbox;
   State.folder = folder;
@@ -1512,12 +1860,13 @@ async function showSettings(wanted) {
   if (pane === 'benutzer') { loadUsers(); renderAreaRows(); }
   if (pane === 'sicherheit') loadSecurity();
   if (pane === 'api') { loadApiKey(); loadUpload(); }
-  if (pane === 'ki') loadAI();
+  if (pane === 'ki') { loadMcp(); loadAI(); }
   if (pane === 'personen') loadFaceSettings();
-  if (pane === 'ordnen') loadSorting();
+  if (pane === 'ordnen') { loadSorting(); loadSpots().then(loadSpotRows); }
   clearTimeout(jobsTimer);
   if (pane === 'auftraege') { message($('job-msg'), ''); showJobs(); }
   if (pane === 'aenderungen') renderJournal();
+  if (pane === 'system' && State.me.is_admin) loadUpdate().then(showUpdateCard);
 }
 
 $('pw-form').addEventListener('submit', async (event) => {
@@ -1821,28 +2170,50 @@ $('sec-test').addEventListener('click', async () => {
 
 // ----------------------------------------------------------------- API key
 
-function showApiKey(token) {
-  ApiKey.token = token || '';
+// several keys, each with its name and right; a key is shown once, when it is made – only its hash is kept
+function showApiKeys(keys, fresh = null) {
+  const when = (iso) => (iso ? new Date(iso).toLocaleString(LOCALE, { dateStyle: 'short', timeStyle: 'short' }) : '');
+  const change = async (entry, body) => {
+    try { await api('security/api-keys/' + entry.id, { method: 'PATCH', body: JSON.stringify(body) }); $('api-state').textContent = t('„{0}“ gespeichert.', [body.name || entry.name]); }
+    catch (err) { $('api-state').textContent = explain(err.message); loadApiKey(); }
+  };
+  $('api-keys').replaceChildren(...keys.map((entry) => el('tr', { class: 'fd-table__row' },
+    el('td', {}, el('input', { class: 'fd-input', value: entry.name, maxlength: '60', placeholder: t('Name'), 'aria-label': t('Name des Schlüssels'),
+      onchange: (event) => change(entry, { name: event.target.value }) }), ' ', el('span', { class: 'hint', translate: 'no' }, '…' + entry.hint)),
+    el('td', {}, (() => {
+      const right = el('select', { class: 'fd-input', 'aria-label': t('Recht für {0}', [entry.name]), onchange: (event) => change(entry, { right: event.target.value }) },
+        el('option', { value: 'write' }, t('Lesen und schreiben')), el('option', { value: 'read' }, t('Nur lesen')));
+      right.value = entry.right;
+      return right;
+    })()),
+    el('td', { class: 'up-used' }, t('vom {0}', [when(entry.made)]), el('br'), entry.last ? t('zuletzt benutzt {0}', [when(entry.last)]) : t('noch nie benutzt')),
+    el('td', {}, el('button', { class: 'fd-button fd-button--compact', type: 'button', onclick: async () => {
+      if (!window.confirm(t('Neuen Schlüssel für „{0}“ erzeugen? Der bisherige funktioniert dann sofort nicht mehr – Programme, die ihn nutzen, brauchen den neuen.', [entry.name]))) return;
+      loadApiKey(await api(`security/api-keys/${entry.id}/renew`, { method: 'POST' }));
+    } }, t('Neu erzeugen')), ' ', el('button', { class: 'fd-button fd-button--compact fd-button--transparent', type: 'button', onclick: async () => {
+      if (!window.confirm(t('Schlüssel „{0}“ löschen? Programme, die ihn nutzen, kommen dann nicht mehr hinein.', [entry.name]))) return;
+      await api('security/api-keys/' + entry.id, { method: 'DELETE' });
+      loadApiKey();
+    } }, t('Löschen'))))));
+  ApiKey.token = fresh ? fresh.token : '';
   ApiKey.shown = false;
   paintApiKey();
-  $('api-copy').hidden = !token;
-  $('api-del').hidden = !token;
-  $('api-state').textContent = token ? t('Schlüssel ist aktiv.') : t('Kein Schlüssel: Die API ist nur mit einer Anmeldung im Browser nutzbar.');
-
+  $('api-fresh').hidden = !fresh;
+  $('api-fresh-for').textContent = fresh ? t('Neuer Schlüssel für „{0}“:', [fresh.name]) : '';
+  $('api-state').textContent = keys.length ? '' : t('Kein Schlüssel: Die API ist nur mit einer Anmeldung im Browser nutzbar.');
 }
-async function loadApiKey() { showApiKey((await api('security/api-token')).api_token); }
+async function loadApiKey(fresh = null) { showApiKeys(await api('security/api-keys'), fresh); }
 $('api-copy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(ApiKey.token); $('api-state').textContent = t('Schlüssel kopiert.'); }
   catch { ApiKey.shown = true; paintApiKey(); $('api-key').select(); }
 });
-$('api-new').addEventListener('click', async () => {
-  if (ApiKey.token && !window.confirm(t('Neuen Schlüssel erzeugen? Der bisherige funktioniert dann sofort nicht mehr – Skripte, die ihn nutzen, brauchen den neuen.'))) return;
-  showApiKey((await api('security/api-token', { method: 'POST' })).api_token);
-  $('api-state').textContent = t('Neuer Schlüssel erzeugt.');
-});
-$('api-del').addEventListener('click', async () => {
-  if (!window.confirm(t('Schlüssel löschen? Skripte kommen dann nicht mehr hinein.'))) return;
-  showApiKey((await api('security/api-token', { method: 'DELETE' })).api_token);
+$('api-add').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const made = await api('security/api-keys', { method: 'POST', body: JSON.stringify({ name: $('api-name').value, right: $('api-right').value }) });
+    $('api-name').value = '';
+    loadApiKey(made);
+  } catch (err) { $('api-state').textContent = explain(err.message); }
 });
 
 // the door for the phone: one area, its own key – the key is shown once, when it is made
@@ -1913,6 +2284,64 @@ $('up-add').addEventListener('submit', async (event) => {
   } catch (err) { $('up-state').textContent = explain(err.message); }
 });
 
+// ----------------------------------------------------------------- update check (version.worldgate.de, as in Ordnung!)
+
+const updDate = (d) => (d ? new Date(d + 'T12:00').toLocaleDateString(LOCALE) : '–');
+
+async function loadUpdate() {
+  const btn = $('btn-update');
+  btn.hidden = true;
+  if (!State.me || !State.me.is_admin) return null;
+  let u;
+  try { u = await api('update'); } catch { return null; }
+  if (u.on && u.newer) {
+    btn.textContent = t('Neue Version {0}', [u.latest]);
+    btn.hidden = false;
+    btn.onclick = () => openUpdateDialog(u);
+  }
+  return u;
+}
+
+function openUpdateDialog(u) {
+  $('upd-dlg-title').textContent = t('Neue Version {0}', [u.latest]);
+  $('upd-dlg-intro').textContent = t('Installiert ist Version {0}. Deine Fotos und Einstellungen bleiben beim Update erhalten – sie liegen in deinen Ordnern und im Datenordner, nicht im Container.', [u.installed]);
+  $('upd-dlg-notes').textContent = u.notes || '–';
+  $('upd-dlg-link').hidden = !u.url;
+  $('upd-dlg-link').href = u.url || '#';
+  $('upd-dlg').showModal();
+}
+
+function showUpdateCard(u) {
+  if (!u) return;
+  $('upd-on').checked = u.on;
+  $('upd-on').disabled = u.locked;
+  $('upd-check').disabled = !u.on;
+  let state;
+  if (u.locked) state = t('Abgeschaltet über VERSIONSPRUEFUNG=0.');
+  else if (!u.on) state = t('Installiert: Version {0}. Die Prüfung ist aus.', [u.installed]);
+  else if (u.newer) state = t('Version {0} ist verfügbar (installiert: {1}).', [u.latest, u.installed]);
+  else if (u.error) state = t('Die letzte Prüfung am {0} hat nicht geklappt (kein Internet?). Augenblick! versucht es morgen wieder.', [updDate(u.checked)]);
+  else if (u.checked) state = t('Aktuell: Version {0} (zuletzt geprüft am {1}).', [u.installed, updDate(u.checked)]);
+  else state = t('Installiert: Version {0}. Noch nicht geprüft.', [u.installed]);
+  $('upd-state').textContent = state;
+}
+
+$('upd-dlg-close').addEventListener('click', () => $('upd-dlg').close());
+$('upd-on').addEventListener('change', async () => {
+  try {
+    showUpdateCard(await api('update', { method: 'PUT', body: JSON.stringify({ on: $('upd-on').checked }) }));
+    message($('upd-msg'), t('Gespeichert.'));
+    loadUpdate();
+  } catch (err) { message($('upd-msg'), explain(err.message), true); }
+});
+$('upd-check').addEventListener('click', async () => {
+  try {
+    showUpdateCard(await api('update/check', { method: 'POST' }));
+    message($('upd-msg'), t('Geprüft.'));
+    loadUpdate();
+  } catch (err) { message($('upd-msg'), explain(err.message), true); }
+});
+
 $('btn-rescan').addEventListener('click', async () => {
   await api('rescan', { method: 'POST' });
   setTimeout(() => { pollStatus(); showSettings(); }, 1500);
@@ -1933,6 +2362,8 @@ const PROBLEMS = [
   ['no write access', t('Dir fehlt das Schreibrecht für diesen Bereich.')],
   ['only JPEG', t('Drehen geht bisher nur bei JPEG- und HEIC-Bildern.')],
   ['no turn field', t('Dieses Bild lässt sich hier nicht drehen: Die Datei hat kein eigenes Drehfeld.')],
+  ['this kind of film', t('Nur MOV- und MP4-Videos lassen sich ändern, ältere Formate wie MPG oder AVI nicht.')],
+  ['ffmpeg is not installed', t('Zum Prüfen von Videos fehlt ffmpeg, das Video ist unverändert.')],
   ['only pictures', t('Videos lassen sich noch nicht ändern.')],
   ['raw files', t('Rohdateien (DNG) bleiben so, wie die Kamera sie geschrieben hat.')],
   ['only pictures can be worked on', t('Bearbeiten geht nur bei Fotos – nicht bei Videos, Rohdateien und GIFs.')],
@@ -1964,6 +2395,9 @@ const PROBLEMS = [
   ['monthly limit reached', t('Das Monatslimit für die KI ist erreicht.')],
   ['the AI found nothing to say', t('Die KI hatte zu dem Bild nichts zu sagen.')],
   ['no API key', t('Es ist kein API-Schlüssel hinterlegt.')],
+  ['a key with this name exists', t('Einen Schlüssel mit diesem Namen gibt es schon.')],
+  ['name must have 1 to 60 characters', t('Der Name braucht 1 bis 60 Zeichen.')],
+  ['this API key may only read', t('Dieser API-Schlüssel darf nur lesen.')],
   ['API key rejected', t('Der Anbieter lehnt den API-Schlüssel ab.')],
   ['not an Anthropic key', t('Das sieht nicht nach einem Anthropic-Schlüssel aus (er beginnt mit sk-ant-).')],
   ['no server address', t('Es fehlt die Adresse des Servers.')],
@@ -1998,6 +2432,8 @@ const PROBLEMS = [
   ['person not found', t('Diese Person steht in keinem Bild (mehr).')],
   ['choose another name', t('Bitte einen anderen Namen wählen.')],
   ['face not found', t('Dieses Gesicht gibt es nicht mehr – oder dir fehlt das Schreibrecht für sein Bild.')],
+  ['place name used twice', t('Zwei feste Orte tragen denselben Namen.')],
+  ['a place needs a name', t('Jeder Ort braucht einen Namen und Koordinaten.')],
   ['exiftool refused', t('exiftool kann die Angaben in dieser Datei nicht ändern, das Bild ist unverändert.')],
 ];
 function explain(detail) {
@@ -2045,6 +2481,7 @@ async function turnShown(degrees) {
     adopt(photo, old);
     if (Viewer.key === old) {
       Viewer.key = photo.key;
+      if (Viewer.list) Viewer.list = Viewer.list.map((i) => (i.key === old ? { ...i, key: photo.key, o: photo.orientation } : i));
       showPhoto(photo);
       message($('v-msg'), photo.orientation > 1
         ? t('Per Markierung gedreht – verlustfrei ging es bei diesem Bild nicht. Warum, steht unter Einstellungen → Änderungen.')
@@ -2060,6 +2497,7 @@ $('v-edit').addEventListener('click', () => {
   const photo = Viewer.photo;
   $('e-taken').value = photo.taken;
   $('e-place').value = photo.lat === null ? '' : `${photo.lat}, ${photo.lon}`;
+  showSpot($('e-spot'), $('e-place'));
   $('e-desc').value = photo.description || '';
   $('e-creator').value = photo.creator || '';
   $('e-words').value = photo.keywords.join(', ');
@@ -2177,8 +2615,95 @@ $('map-search').addEventListener('submit', async (event) => {
 async function mapInto(input) {
   const result = await pickPlace(parsePlace(input.value));
   if (result) input.value = `${result.lat}, ${result.lon}`;
+  input.dispatchEvent(new Event('input'));
   input.focus();
 }
+
+// ----------------------------------------------------------------- fixed places
+/* Places one picks again and again. They live in the settings of the installation; into a picture go only
+   the coordinates. A picture within NEAR_M of one counts as taken there. */
+
+const NEAR_M = 150;
+function metres(lat1, lon1, lat2, lon2) {
+  const rad = Math.PI / 180;
+  const h = Math.sin((lat2 - lat1) * rad / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin((lon2 - lon1) * rad / 2) ** 2;
+  return 12742000 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+function spotAt(lat, lon) {
+  if (lat === null || lat === undefined) return null;
+  let best = null; let bestM = NEAR_M;
+  for (const spot of State.spots || []) {
+    const m = metres(lat, lon, spot.lat, spot.lon);
+    if (m <= bestM) { best = spot; bestM = m; }
+  }
+  return best;
+}
+function fillSpots(select) {
+  const spots = State.spots || [];
+  select.replaceChildren(el('option', { value: '' }, t('Fester Ort …')), ...spots.map((spot, i) => el('option', { value: String(i) }, spot.name)));
+  select.hidden = !spots.length;
+}
+function showSpot(select, input) {        // the list says which fixed place the coordinates in the field are, if any
+  const spot = spotAt(...(() => { const p = parsePlace(input.value); return p ? [p.lat, p.lon] : [null, null]; })());
+  select.value = spot ? String(State.spots.indexOf(spot)) : '';
+}
+async function loadSpots() {
+  try { State.spots = await api('spots', { quiet: true }); } catch { State.spots = []; }
+  for (const id of ['e-spot', 'b-spot']) fillSpots($(id));
+}
+for (const [pick, field] of [['e-spot', 'e-place'], ['b-spot', 'b-place']]) {
+  $(pick).addEventListener('change', () => {
+    const spot = State.spots[Number($(pick).value)];
+    if ($(pick).value !== '' && spot) $(field).value = `${spot.lat}, ${spot.lon}`;
+  });
+  $(field).addEventListener('input', () => showSpot($(pick), $(field)));
+}
+
+async function saveSpots(spots, msg) {
+  State.spots = await api('spots', { method: 'PUT', body: JSON.stringify({ spots }) });
+  for (const id of ['e-spot', 'b-spot']) fillSpots($(id));
+  showSpot($('e-spot'), $('e-place'));
+  if (msg) message(msg, t('Gespeichert.'));
+}
+$('e-spot-save').addEventListener('click', async () => {
+  const spot = parsePlace($('e-place').value);
+  if (!spot) { message($('v-msg'), t('Erst einen Ort eintragen oder auf der Karte wählen.'), true); return; }
+  const name = (window.prompt(t('Unter welchem Namen soll der Ort gemerkt werden?'), '') || '').trim();
+  if (!name) return;
+  const others = (State.spots || []).filter((s) => s.name.toLocaleLowerCase() !== name.toLocaleLowerCase());
+  try {
+    await saveSpots([...others, { name, ...spot }]);
+    message($('v-msg'), t('„{0}“ ist jetzt ein fester Ort.', [name]));
+  } catch (err) { message($('v-msg'), explain(err.message), true); }
+});
+
+function spotRow(spot) {
+  const place = el('input', { class: 'fd-input', value: spot.lat === undefined ? '' : `${spot.lat}, ${spot.lon}`, placeholder: '49.84512, 7.86301', 'aria-label': t('Breite, Länge') });
+  const row = el('div', { class: 'spot' },
+    el('input', { class: 'fd-input', value: spot.name || '', maxlength: 60, placeholder: t('Name'), 'aria-label': t('Name des Ortes') }),
+    place,
+    el('button', { class: 'fd-button', type: 'button', onclick: () => mapInto(place) }, t('Karte …')),
+    el('button', { class: 'fd-button fd-button--transparent', type: 'button', onclick: () => row.remove() }, t('Entfernen')));
+  return row;
+}
+function loadSpotRows() {
+  message($('spot-msg'), '');
+  $('spot-rows').replaceChildren(...(State.spots || []).map(spotRow));
+}
+$('spot-add').addEventListener('click', () => { const row = spotRow({}); $('spot-rows').append(row); row.querySelector('input').focus(); });
+$('spot-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const spots = [];
+  for (const row of $('spot-rows').children) {
+    const [name, place] = row.querySelectorAll('input');
+    if (!name.value.trim() && !place.value.trim()) continue;
+    const spot = parsePlace(place.value);
+    if (!name.value.trim() || !spot) { message($('spot-msg'), t('Jeder Ort braucht einen Namen und Koordinaten.'), true); (name.value.trim() ? place : name).focus(); return; }
+    spots.push({ name: name.value.trim(), ...spot });
+  }
+  try { await saveSpots(spots, $('spot-msg')); loadSpotRows(); message($('spot-msg'), t('Gespeichert.')); }
+  catch (err) { message($('spot-msg'), explain(err.message), true); }
+});
 $('e-map').addEventListener('click', () => mapInto($('e-place')));
 $('b-map').addEventListener('click', () => mapInto($('b-place')));
 
@@ -2238,11 +2763,13 @@ $('sel-all').addEventListener('click', async (event) => {       // every photo o
 
 const randomHex = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
-/* Sends the keys in small portions, so there is progress to show and no request runs for minutes. */
-async function runMany(path, payload, tell, verb = t('geändert')) {
+/* Sends the keys in small portions, so there is progress to show and no request runs for minutes.
+   Afterwards the choice is done with: only the pictures where it failed stay chosen, to look at or try again.
+   Turning keeps it – one often turns the same pictures twice. */
+async function runMany(path, payload, tell, verb = t('geändert'), keep = false) {
   const keys = [...State.selected];
   const batch = randomHex();
-  let good = 0; const bad = [];
+  let good = 0; const bad = []; const failed = [];
   // more than a handful takes a while: say so in the middle of the screen, and keep hands off till it is done
   const busy = keys.length > 10 ? $('busy') : null;
   if (busy) { $('busy-bar').max = keys.length; $('busy-bar').value = 0; busy.showModal(); }
@@ -2253,13 +2780,15 @@ async function runMany(path, payload, tell, verb = t('geändert')) {
     try { results = await api(path, { method: 'POST', body: JSON.stringify({ ...payload, keys: keys.slice(i, i + 10), batch }) }); }
     catch (err) { results = keys.slice(i, i + 10).map((key) => ({ key, ok: false, error: err.message })); }
     for (const result of results) {
-      if (!result.ok) bad.push(result.error);
+      if (!result.ok) { bad.push(result.error); failed.push(result.key); }
       else { good += 1; if (result.photo) adopt(result.photo, result.key); else State.selected.delete(result.key); }
     }
   }
+  if (!keep) { State.selected.clear(); for (const key of failed) State.selected.add(key); }
   State.dirty = false;
   let text = good === 1 ? t('1 Bild {0}.', [verb]) : t('{0} Bilder {1}.', [number(good), verb]);
   if (bad.length) text += t(' {0} nicht: {1}', [number(bad.length), [...new Set(bad.map(explain))].join(' ')]);
+  if (bad.length && !keep) text += t(' Diese bleiben ausgewählt.');
   tell(text, bad.length > 0);
   loadTree();
   try { await reload(true); } finally { if (busy) busy.close(); }
@@ -2270,7 +2799,7 @@ $('busy').addEventListener('cancel', (event) => event.preventDefault());      //
 
 async function turnSelected(degrees) {
   for (const id of ['sel-left', 'sel-right', 'sel-edit']) $(id).disabled = true;
-  await runMany('rotate', { degrees }, (text, isBad) => message($('sel-msg'), text, isBad));
+  await runMany('rotate', { degrees }, (text, isBad) => message($('sel-msg'), text, isBad), t('geändert'), true);
   markSelection();
 }
 $('sel-left').addEventListener('click', () => turnSelected(270));
@@ -2298,6 +2827,7 @@ $('b-date-mode').addEventListener('change', () => { batchFields(); batchDate(); 
 $('b-place-mode').addEventListener('change', batchFields);
 $('sel-edit').addEventListener('click', () => {
   $('batch-form').reset();
+  fillSpots($('b-spot'));
   batchFields();
   message($('batch-msg'), '');
   const n = State.selected.size;
@@ -2392,6 +2922,12 @@ function showTake(photo) {
       : idea.date.precision === 'month' ? { month: 'long', year: 'numeric' } : { day: 'numeric', month: 'long', year: 'numeric' });
     $('v-inbox-date').textContent = t('Geschätztes Datum übernehmen: {0}', [when]);
   }
+  const where = placeIdea(photo, idea);
+  $('v-inbox-place-row').hidden = !where;
+  $('v-inbox-place-on').hidden = !where || !where.take;     // a doubt is only said, there is nothing to take
+  $('v-inbox-place-on').checked = Boolean(where && where.take);
+  $('v-inbox-place-row').classList.toggle('is-bad', Boolean(where && !where.take));
+  if (where) $('v-inbox-place').textContent = where.text;
 }
 
 function forget(key) {         // a picture that left the view: leafing on skips it
@@ -2412,6 +2948,7 @@ $('v-inbox-take').addEventListener('click', async () => {
     body.description = $('v-inbox-desc-on').checked ? idea.description || '' : '';
     body.keywords = (idea.keywords || []).filter((word) => !Take.off.has(word) && !photo.keywords.includes(word));
     if (!$('v-inbox-date-row').hidden && $('v-inbox-date-on').checked) body.taken = idea.date.taken;
+    if (!$('v-inbox-place-row').hidden && !$('v-inbox-place-on').hidden && $('v-inbox-place-on').checked) Object.assign(body, { lat: idea.place.lat, lon: idea.place.lon });
   } else body.take = false;
   $('v-inbox-take').disabled = true;
   message($('v-msg'), t('Wird einsortiert …'));
@@ -2424,7 +2961,7 @@ $('v-inbox-take').addEventListener('click', async () => {
     try { State.areas = await api('areas'); showInbox(); } catch { /* the next look fixes the number */ }
     if (Viewer.key !== photo.key) return;
     if (next && next.key !== photo.key) {
-      await openViewer(next.key, next.month);
+      await openViewer(next.key, next.month, Viewer.list);
       message($('v-msg'), t('Das vorige Bild liegt jetzt in {0}.', [result.photo.folder]));
     } else closeViewer();
   } catch (err) { message($('v-msg'), explain(err.message), true); }
@@ -2704,14 +3241,26 @@ async function showJobs() {
   $('job-dupes').disabled = dupes.search.running;
 
   const name = JOB_NAMES[job.kind] || job.kind;
+  const what = `${name} (${jobWhat(job.what)})`;
+  const skipped = job.failed ? t(', {0} übersprungen', [number(job.failed)]) : '';
+  const notReached = job.total - job.done;
   $('job-long-text').textContent = job.running
-    ? t('{0} ({1}): {2} von {3}', [name, jobWhat(job.what), number(job.done), number(job.total)]) + (job.failed ? t(', {0} nicht geschrieben', [number(job.failed)]) : '') + (job.stop ? t(' – wird abgebrochen …') : '')
-    : job.kind
-      ? t('Zuletzt: {0} ({1}), beendet {2} – {3} von {4} bearbeitet', [name, jobWhat(job.what), ago(job.ended), number(job.done), number(job.total)]) + (job.failed ? t(', {0} nicht geschrieben', [number(job.failed)]) + '.' : '.') + (job.done < job.total ? t(' Abgebrochen.') : '')
-      : t('Seit dem letzten Start von Augenblick! lief keiner.');
+    ? t('Läuft: {0} – {1} von {2}', [what, number(job.done), number(job.total)]) + skipped + (job.stop ? t(' – wird abgebrochen …') : '.')
+    : !job.kind ? t('Seit dem letzten Start von Augenblick! lief keiner.')
+    : notReached > 0
+      ? t('Abgebrochen {0}: {1} – {2} von {3} erledigt', [ago(job.ended), what, number(job.done - job.failed), number(job.total)]) + skipped + t(', {0} nicht mehr drangekommen.', [number(notReached)])
+      : t('Fertig {0}: {1} – {2} von {3} erledigt', [ago(job.ended), what, number(job.done - job.failed), number(job.total)]) + skipped + '.';
   bar('job-long-bar', job.done, job.total, job.running);
   $('job-stop').hidden = !job.running || !State.me.is_admin;
-  $('job-long-errors').replaceChildren(...job.errors.slice(0, 10).map((e) => el('li', {}, `${e.path}: ${explain(e.error)}`)));
+  const errors = job.errors || [];
+  $('job-long-head').hidden = !errors.length;
+  $('job-long-head').textContent = job.failed > errors.length
+    ? t('Übersprungen und unverändert (die ersten {0} von {1}):', [number(errors.length), number(job.failed)])
+    : t('Übersprungen und unverändert:');
+  $('job-long-errors').replaceChildren(...errors.map((e) => el('li', { title: e.error },
+    e.key ? el('a', { href: '#', onclick: (event) => { event.preventDefault(); openViewer(e.key, null); } }, e.path) : e.path,
+    ' – ' + explain(e.error).replace(/ \((check failed|exiftool)[^)]*\)+$/, ''))));
+  $('job-seen').hidden = job.running || !errors.length || !State.me.is_admin;
 
   jobsTimer = setTimeout(showJobs, scan.running || faces.search.running || job.running || dupes.search.running ? 3000 : 10000);
 }
@@ -2724,6 +3273,10 @@ async function jobAction(path, done) {
 $('job-scan').addEventListener('click', () => jobAction('rescan', t('Einlesen angestoßen.')));
 $('job-faces').addEventListener('click', () => jobAction('faces/search', t('Suche angestoßen.')));
 $('job-dupes').addEventListener('click', () => jobAction('dupes/search', t('Duplikatsuche angestoßen.')));
+$('job-seen').addEventListener('click', async () => {
+  try { await api('job/seen', { method: 'POST' }); } catch (err) { message($('job-msg'), explain(err.message), true); }
+  showJobs();
+});
 $('job-stop').addEventListener('click', () => {
   if (window.confirm(t('Den laufenden Auftrag abbrechen? Was schon geschrieben wurde, bleibt.'))) jobAction('job/stop', t('Wird abgebrochen.'));
 });
@@ -2737,6 +3290,18 @@ async function loadAiOffer() {
   select.value = State.ai.default;
   select.hidden = State.ai.prompts.length < 2;
   if (State.me) fillMoveTargets();
+}
+
+// What the AI thinks about the place: to fill in where the picture has none, a doubt where it is far off.
+function placeIdea(photo, idea) {
+  const place = idea && idea.place;
+  if (!place) return null;
+  const known = [photo.city, photo.country].filter(Boolean).join(', ');
+  if (photo.lat === null) return { take: true, text: t('Geschätzten Ort übernehmen: {0}', [place.name || `${place.lat}, ${place.lon}`]) };
+  if (!place.far) return null;
+  return { take: false, text: known
+    ? t('Die KI verortet das Bild in {0} – laut Koordinaten liegt es bei {1}, {2} km entfernt. Stimmt der Ort?', [place.name, known, number(place.km)])
+    : t('Die KI verortet das Bild in {0} – {1} km von den Koordinaten im Bild entfernt. Stimmt der Ort?', [place.name, number(place.km)]) };
 }
 
 const cents = (usd) => (usd > 0 ? `, ${(usd * 100).toLocaleString(LOCALE, { maximumFractionDigits: 2 })} ct` : '');
@@ -2762,7 +3327,12 @@ $('v-ai').addEventListener('click', async () => {
       $('e-taken').value = idea.date.taken;
       dated = { year: t(' Datum geschätzt – gemeint ist nur das Jahr.'), month: t(' Datum geschätzt – gemeint ist nur der Monat.'), day: t(' Datum geschätzt.') }[idea.date.precision];
     }
-    message($('v-msg'), t('Vorschlag der KI ({0}{1}). Prüfen, dann „Ins Bild schreiben“.{2}{3}', [idea.model, cents(idea.cost), dated, idea.note ? ' ' + idea.note : '']));
+    const where = placeIdea(photo, idea);
+    if (where && where.take) {
+      $('e-place').value = `${idea.place.lat}, ${idea.place.lon}`;
+      dated += t(' Ort geschätzt: {0}.', [idea.place.name || `${idea.place.lat}, ${idea.place.lon}`]);
+    } else if (where) dated += ' ' + where.text;
+    message($('v-msg'), t('Vorschlag der KI ({0}{1}). Prüfen, dann „Ins Bild schreiben“.{2}{3}', [idea.model, cents(idea.cost), dated, idea.note ? ' ' + idea.note : '']), Boolean(where && !where.take));
   } catch (err) { message($('v-msg'), explain(err.message), true); }
   finally { $('v-ai').disabled = false; }
 });
@@ -2830,6 +3400,24 @@ function syncAiProvider() {
 }
 $('ai-provider').addEventListener('change', syncAiProvider);
 async function loadAI() { showAI(await api('ai')); message($('ai-msg'), ''); }
+
+// the door for AI assistants (MCP): off until an administrator opens it; they sign in with an API key
+async function loadMcp() {
+  message($('mcp-msg'), '');
+  $('mcp-url').textContent = location.origin + '/api/mcp';
+  try { $('mcp-on').checked = (await api('mcp/settings')).on; } catch (err) { message($('mcp-msg'), explain(err.message), true); }
+}
+$('mcp-on').addEventListener('change', async () => {
+  const on = $('mcp-on').checked;
+  try {
+    const saved = await api('mcp/settings', { method: 'PUT', body: JSON.stringify({ on }) });
+    $('mcp-on').checked = saved.on;
+    message($('mcp-msg'), saved.on ? t('Der MCP-Zugang ist eingeschaltet.') : t('Der MCP-Zugang ist ausgeschaltet.'));
+  } catch (err) {
+    $('mcp-on').checked = !on;
+    message($('mcp-msg'), explain(err.message), true);
+  }
+});
 
 async function saveAI(extra = {}) {
   const rows = [...$('ai-prompts').children];
@@ -3763,7 +4351,8 @@ async function deleteShown() {
     const button = document.querySelector(`.tile[data-key="${key}"]`);
     if (button) button.remove();
     loadTrashCount();
-    if (Viewer.key === key) { if (next) await openViewer(next.key, next.month); else closeViewer(); }
+    const list = Viewer.list && Viewer.list.filter((i) => i.key !== key);
+    if (Viewer.key === key) { if (next) await openViewer(next.key, next.month, list); else closeViewer(); }
     message($('v-msg'), t('In den Papierkorb gelegt.'));
   } catch (err) { message($('v-msg'), explain(err.message), true); }
   $('v-delete').disabled = false;

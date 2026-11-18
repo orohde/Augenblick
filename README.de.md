@@ -21,13 +21,15 @@ Die meisten Fotoserver nehmen deine Bilder in eine eigene Ablage und merken sich
 - **Verlustfreies Drehen** von JPEG (jpegtran) und HEIC; markierte Gesichter drehen mit.
 - **Bilder bearbeiten:** zuschneiden, gerade rücken, Licht und Farben – als neues Bild neben dem Original, das dahinter unangetastet bleibt.
 - **Alben, die im Foto stehen** (hierarchische Schlagworte), **Kategorien, die sich selbst füllen** (Videos, Live Photos, Panoramen, Favoriten, RAW, An diesem Tag) und **Erinnerungen**: Reisen und „Diese Woche in früheren Jahren“, aus Datum und Ort gefunden.
+- **Startseite und Ansehen:** zuerst die Bilder, die zuletzt dazugekommen sind (egal wie alt), dazu Erinnerungen und angepinnte Alben. Jedes Album, jede Auswahl und jede Erinnerung lässt sich bildschirmfüllend ansehen – von Hand oder als Diashow.
 - **Personen.** Gesichter werden auf dem eigenen Rechner gefunden und gruppiert (keine Cloud, keine Grafikkarte); Namen stehen als übliche XMP-Regionen im Bild.
 - **Duplikate**, auch dasselbe Bild in anderer Größe; was nur die Kopie weiß, wird vorher übernommen.
 - **Ordnen nach Regeln**, wenn du magst: ein Ordner je Jahr, Dateiname aus dem Datum – mit Vorschau, nie ohne deine Ansage.
 - **Upload vom Telefon** über WebDAV (PhotoSync und andere) in einen Eingang, mit einem Schlüssel je Telefon, der nichts kann außer abliefern. Ein Schlüssel kann den Namen des Fotografen in die Bilder schreiben, und Bilder behalten das Datum, das das Telefon für sie kannte.
 - **Eingang abarbeiten:** Die KI schlägt für Neues Beschreibung und Schlagworte vor (auf Knopfdruck oder von selbst), Gesichter werden schon dort erkannt. Du streichst, was nicht passt, und sortierst mit einem Klick ein – danach kommt das nächste Bild.
 - **Filme und Live Photos**, HEIC, ProRAW (DNG, nur lesend).
-- **Bereiche und Rechte je Person**, zweiter Faktor, Heimnetz-Regeln, Meldungen über ntfy, REST-API (`/api/docs`).
+- **Bereiche und Rechte je Person**, zweiter Faktor, Heimnetz-Regeln, Meldungen über ntfy, REST-API (`/api/docs`) mit benannten API-Schlüsseln (nur lesen oder lesen und schreiben).
+- **Für KI-Assistenten (MCP):** Ein Assistent wie Claude kann über `/api/mcp` suchen, Bilder ansehen und – mit einem Schlüssel, der schreiben darf – Metadaten, Alben und Namen schreiben, verschieben, einsortieren und in den Papierkorb legen. Aus bei einer frischen Installation, eingeschaltet unter *Einstellungen → KI*.
 - **KI, wenn du willst** (Claude, Ollama oder ein anderer OpenAI-kompatibler Dienst): schlägt Beschreibung und Schlagworte vor, benennt eine Erinnerung. Sie schreibt nie von selbst – mit einer Ausnahme, die du selbst startest: den Bestand beschreiben lassen, also jedes Bild ohne Schlagworte, damit die Suche Bilder nach ihrem Inhalt findet („Meer“, „Hochzeit“). Jede dieser Änderungen lässt sich zurücknehmen.
 - **Vier Sprachen:** Deutsch, Englisch, Französisch, Italienisch – je Konto wählbar.
 
@@ -69,6 +71,11 @@ Das Image gibt es für `linux/amd64` und `linux/arm64` (Raspberry Pi, Apple Sili
 | `TZ` | `UTC` | Zeitzone, z. B. `Europe/Berlin` |
 | `AUGENBLICK_RESCAN_MINUTES` | `15` | wie oft die Ordner nach neuen oder geänderten Dateien durchgesehen werden |
 | `AUGENBLICK_INTERNAL_NETWORKS` | private Netze | was als Heimnetz zählt (auch unter *Einstellungen → Sicherheit*) |
+| `VERSIONSPRUEFUNG` | an | `0` schaltet die tägliche Frage nach neuen Versionen dauerhaft ab (siehe unten) |
+
+## Neue Versionen
+
+Einmal am Tag fragt Augenblick! bei `version.worldgate.de`, ob es eine neue Version gibt. Gibt es eine, sehen Admins oben einen Knopf mit Anleitung zum Aktualisieren. Übertragen werden dabei nur der Name der App, die installierte Version und die Installationsart (z. B. Docker), keine Kennung, keine Fotos und keine Namen. Gespeichert werden dort nur Tagessummen, keine IP-Adressen. Daraus sehen wir, wie viele Installationen ungefähr laufen. Abschalten lässt sich das unter *Einstellungen → System* oder dauerhaft mit `VERSIONSPRUEFUNG=0`.
 
 ## Die Demo ausprobieren
 
@@ -112,7 +119,18 @@ AUGENBLICK_PHOTOS=/tmp/augenblick-demo/fotos AUGENBLICK_DATA=/tmp/augenblick-dem
   einen Bereich, den du in den Einstellungen wählst: nachsehen, Ordner anlegen, Dateien ablegen – lesen, ändern oder
   löschen kann die App nichts, überschrieben wird nie. Der Upload-Schlüssel ist ein eigener und öffnet sonst nichts.
 - **Konten und Sicherheit.** Bereiche je Person, zweiter Faktor (Authenticator-App), angemeldete Geräte,
-  Heimnetz-Regeln, Benachrichtigung per ntfy, API-Schlüssel für Skripte.
+  Heimnetz-Regeln, Benachrichtigung per ntfy, API-Schlüssel für Skripte: beliebig viele, je mit Namen und Recht
+  („Nur lesen“ sieht alle Bereiche und ändert nichts, „Lesen und schreiben“ darf, was ein Administrator darf);
+  gespeichert wird nur ein Fingerabdruck, der Schlüssel selbst wird einmal beim Anlegen gezeigt.
+- **Zugang für KI-Assistenten (MCP).** Der Endpunkt `/api/mcp` spricht das Model Context Protocol (Streamable
+  HTTP) und nimmt denselben Schlüssel wie die REST-API als `Authorization: Bearer <Schlüssel>`. Er ist bei einer
+  frischen Installation aus; ein Administrator schaltet ihn unter *Einstellungen → KI* ein. Die Werkzeuge: Bereiche,
+  Ordner, Alben, Personen, Orte, Kameras und Erinnerungen auflisten, Fotos suchen und filtern, Details lesen, eine
+  kleine Vorschau ansehen, Gesichter, Eingang, Papierkorb und Änderungen ansehen – und mit Schreibrecht Metadaten
+  ändern, Alben befüllen, drehen, Gesichter benennen, verschieben, aus dem Eingang einsortieren, in den Papierkorb
+  legen, zurückholen und Änderungen zurücknehmen. Rechte, Journal und Papierkorb gelten wie in der Oberfläche; ein
+  Schlüssel mit Leserecht bekommt keine schreibenden Werkzeuge angeboten. Endgültig löschen und die Einstellungen
+  der Installation gibt es über MCP nicht.
 - **Ordnen nach Regeln, wenn du willst.** Je Ordner lässt sich festlegen, wohin Bilder gehören und wie sie heißen,
   etwa `{Jahr}` und `{JJJJMMTT}_{HHMMSS}`. „Passt nicht zum Schema“ zeigt die Abweichler, „Einsortieren“ verschiebt
   nach Vorschau. Ohne Regel wird nie etwas verschoben oder umbenannt; nichts wird überschrieben, leere Ordner
@@ -138,15 +156,15 @@ AUGENBLICK_PHOTOS=/tmp/augenblick-demo/fotos AUGENBLICK_DATA=/tmp/augenblick-dem
   lesend), wen es mit Namen kennt, sucht dieselben Bilder hier – über den Pfad, sonst über die unveränderte Datei,
   sonst über Name und Aufnahmezeit – und zeigt eine Vorschau. Erst nach Bestätigung werden die Namen als Regionen
   in die Bilder geschrieben. Adresse und Schlüssel werden nicht gespeichert.
-- **Noch nicht:** Videos ändern, andere Formate als JPEG und HEIC drehen, Gesichter in Videos.
+- **Noch nicht:** RAW-Dateien und ältere Videoformate (etwa AVI, MPG) ändern, andere Formate als JPEG und HEIC drehen, Gesichter in Videos.
 
 ## Grundsätze
 
 - **Deine Ordner sind die Wahrheit.** Kein Import, keine eigene Ablage. Augenblick! liest die Ordner, die es schon gibt.
   Jeder Ordner direkt unter dem Foto-Verzeichnis ist ein *Bereich*; Konten bekommen Rechte je Bereich.
 - **Metadaten stehen in der Datei.** Datum, Ort, Beschreibung, Schlagworte, Bewertung und Personen werden ins Bild
-  geschrieben (EXIF/IPTC/XMP). Ein übliches `.xmp`-Sidecar gibt es nur dort, wo Einbetten nicht sicher ist
-  (RAW, Video).
+  geschrieben (EXIF/IPTC/XMP), bei Videos (MOV, MP4) in die Datei des Films. Keine Sidecar-Dateien; RAW-Dateien
+  bleiben, wie die Kamera sie geschrieben hat.
 - **Die Datenbank ist nur ein Index.** Eine kleine SQLite-Datei, die sich jederzeit aus den Fotos neu aufbauen lässt.
 - **Verlustfrei, wo es geht.** Drehen ohne Neukodierung; jede Änderung steht im Journal und lässt sich zurücknehmen.
 - **Ein Container.** Python, FastAPI, keine weiteren Dienste nötig.

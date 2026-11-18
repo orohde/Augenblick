@@ -254,7 +254,10 @@ body {
 
 .place-row { display: flex; gap: 0.5rem; flex: 2 1 16rem; margin: 0; }
 .place-row .fd-input { flex: 1; min-width: 0; }
-.edit > .place-row { flex: none; }      /* in the form the fields stand one below the other: no height to share out */
+.edit > .place-row { flex: none; }
+.spot-rows { display: grid; gap: 0.4rem; margin: 0.5rem 0; }
+.spot { display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) auto auto; gap: 0.4rem 0.6rem; align-items: center; }
+@media (max-width: 600px) { .spot { grid-template-columns: 1fr auto; } }      /* in the form the fields stand one below the other: no height to share out */
 .map-dialog { width: min(52rem, calc(100vw - 2rem)); }
 .map { height: min(28rem, 55vh); margin-top: 0.5rem; border-radius: 0.5rem; background: #ddd; z-index: 0; }
 .map-hits { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem; }
@@ -315,6 +318,7 @@ body {
 .form-grid { display: grid; grid-template-columns: 12rem minmax(0, 22rem); gap: 0.5rem 1rem; align-items: center; margin-top: 0.75rem; }
 .form-msg { margin-left: 0.75rem; color: var(--sapContent_LabelColor, #556b82); }
 .form-msg.is-bad { color: var(--sapNegativeTextColor, #aa0808); }
+.check.is-bad { color: var(--sapCriticalTextColor, #b44f00); }
 .user-table { width: 100%; border-collapse: collapse; margin: 0.5rem 0 1rem; }
 .user-table th, .user-table td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--sapList_BorderColor, #e5e5e5); vertical-align: middle; }
 .user-table th { color: var(--sapContent_LabelColor, #556b82); font-weight: 400; }
@@ -400,6 +404,7 @@ a.tag:hover { outline: 1px solid var(--sapContent_FocusColor, #0070f2); }
 .job-bar { width: 100%; height: 0.6rem; accent-color: var(--sapButton_Emphasized_Background, #0070f2); }
 .job-errors { margin: 0.5rem 0 0; padding-left: 1.2rem; font-size: 0.85rem; color: var(--sapNegativeTextColor, #aa0808); overflow-wrap: anywhere; }
 .job-errors:empty { display: none; }
+.job-errors a { color: inherit; font-weight: 600; }
 .ai-prompts { display: grid; gap: 0.75rem; }
 .ai-prompt { display: grid; grid-template-columns: auto minmax(0, 14rem) auto; gap: 0.4rem 0.6rem; align-items: center; }
 .ai-prompt textarea { grid-column: 1 / -1; width: 100%; resize: vertical; }
@@ -413,6 +418,11 @@ a.tag:hover { outline: 1px solid var(--sapContent_FocusColor, #0070f2); }
 .up-fresh { margin: 0.6rem 0; padding: 0.7rem; border: 2px solid var(--sapButton_Emphasized_Background, #0070f2); border-radius: 0.4rem; display: grid; gap: 0.4rem; }
 .up-add { margin-top: 0.5rem; flex-wrap: wrap; }
 .up-add .fd-input { flex: 1 1 14rem; max-width: 22rem; }
+.up-add select.fd-input { flex: 0 1 12rem; }
+.api-table td:first-child .fd-input { width: auto; }
+.api-table select.fd-input { min-width: 11rem; }
+.mcp-card { margin-bottom: 1rem; }
+.mcp-url { font: 0.85rem ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
 .api-key { flex: 1 1 22rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .api-example { margin: 0.5rem 0 0; padding: 0.6rem 0.75rem; border-radius: 0.4rem; overflow-x: auto; font-size: 0.8rem; white-space: pre;
   background: var(--sapField_Background, rgba(127, 127, 127, 0.12)); }
@@ -548,3 +558,74 @@ a.tree-row { color: inherit; text-decoration: none; }
 .inbox-badge { margin-left: 0.35rem; min-width: 1.2rem; padding: 0 0.35rem; border-radius: 1rem; font-size: 0.7rem;
   background: #c35500; color: #fff; font-weight: 600; display: inline-block; text-align: center; }
 #btn-inbox.is-on { box-shadow: inset 0 -0.15rem 0 currentColor; }
+
+/* update notice (version.worldgate.de) */
+.upd-btn { font-weight: 600; }
+.upd-card { margin: 1rem 0; }
+.upd-dlg { width: min(40rem, calc(100vw - 2rem)); }
+.upd-sub { margin: 1rem 0 0.35rem; font-size: 0.9rem; }
+.upd-how { margin: 0; padding-left: 1.2rem; line-height: 1.5; }
+.upd-how code { font-size: 0.85em; }
+.upd-notes { white-space: pre-wrap; max-height: 14rem; overflow: auto; font-size: 0.85rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(127, 127, 127, 0.08); }
+.upd-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+
+/* ----- Start page ----- */
+
+.side__link--top { font-style: normal; font-weight: 600; margin: 0.25rem 0 0.35rem; }
+.is-start #grid, .is-start #places, .is-start .view-switch, .is-start #grid-empty, .is-start .grid-count { display: none; }
+.start { padding-top: 0.5rem; }
+.start-section { margin-bottom: 2rem; }
+.start-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem 1rem; margin-bottom: 0.6rem; }
+.start-head h3 { margin: 0; font-size: 1rem; }
+.start-all { margin-left: auto; color: var(--sapLinkColor, #0064d9); text-decoration: none; font-size: 0.875rem; }
+.start-all:hover { text-decoration: underline; }
+.start-hint { color: var(--sapContent_LabelColor, #556b82); font-size: 0.875rem; max-width: 40rem; margin: 0; }
+.start-recent .tile { aspect-ratio: var(--r, 1); flex: var(--r, 1) 1 calc(var(--r, 1) * var(--tile, 150px)); min-width: 0; }
+.start-cards { padding-top: 0; }
+.mem-card--album { background: var(--sapList_Hover_Background, #3a4552); }
+.pin-btn { font-size: 1.15rem; min-width: 2rem; color: var(--sapContent_LabelColor, #556b82); }
+.pin-btn.is-on { color: #e9a400; }
+
+/* ----- Looking at pictures: the whole screen, nothing but the picture ----- */
+
+.show { position: fixed; inset: 0; z-index: 70; background: #000; color: #eee; overflow: hidden; outline: none;
+  user-select: none; -webkit-user-select: none; touch-action: pan-y pinch-zoom; }
+.show__pic { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0;
+  transition: opacity 0.6s ease; pointer-events: none; }
+.show__pic.is-on { opacity: 1; }
+.show__video { opacity: 1; pointer-events: auto; background: #000; }
+.show__caption { position: absolute; left: 50%; bottom: 4.75rem; transform: translateX(-50%); max-width: min(90%, 60rem); margin: 0;
+  padding: 0.35rem 0.8rem; border-radius: 0.4rem; background: rgba(0, 0, 0, 0.45); text-align: center; font-size: 0.95rem;
+  line-height: 1.4; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); pointer-events: none; transition: bottom 0.4s ease, opacity 0.4s ease; }
+.show__desc { display: block; font-style: italic; opacity: 0.9; }
+.show__bar { position: absolute; left: 50%; bottom: 1rem; transform: translateX(-50%); display: flex; align-items: center; gap: 0.25rem;
+  padding: 0.35rem 0.5rem; border-radius: 2rem; background: rgba(30, 30, 30, 0.78); backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px); transition: opacity 0.4s ease; white-space: nowrap; }
+.show__bar button, .show__bar select { height: 2.25rem; min-width: 2.25rem; padding: 0 0.6rem; border: 0; border-radius: 1.2rem;
+  background: transparent; color: #eee; font: inherit; font-size: 1.05rem; cursor: pointer; }
+.show__bar select { font-size: 0.85rem; background: rgba(255, 255, 255, 0.08); }
+.show__bar select option { color: #000; }
+.show__bar button:hover, .show__bar select:hover { background: rgba(255, 255, 255, 0.14); }
+.show__bar button:focus-visible, .show__bar select:focus-visible { outline: 2px solid #8ab4ff; outline-offset: 1px; }
+.show__bar button.is-on { color: #8ab4ff; }
+#show-prev, #show-next { font-size: 1.6rem; line-height: 1; }
+.show__pos { min-width: 5.5rem; padding: 0 0.4rem; text-align: center; font-size: 0.8rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.show.is-idle { cursor: none; }
+.show.is-idle .show__bar { opacity: 0; pointer-events: none; }
+.show.is-idle .show__caption { bottom: 1.5rem; }
+@media (max-width: 600px) {
+  .show__bar { bottom: max(0.75rem, env(safe-area-inset-bottom)); gap: 0; padding: 0.25rem; }
+  .show__bar button { min-width: 2.1rem; padding: 0 0.35rem; }
+  .show__pos { min-width: 0; }
+  .show__caption { font-size: 0.85rem; bottom: 4.25rem; }
+}
+.show.is-video .show__bar { bottom: auto; top: 1rem; }
+.show.is-video .show__caption { bottom: auto; top: 4.25rem; }
+.show.is-video.is-idle .show__caption { top: 1rem; }
+@media (max-width: 600px) {       /* the bar on top must not be wider than a phone: that would make the whole page wider */
+  .fd-shellbar { padding: 0 0.5rem; gap: 0.4rem; }
+  .fd-shellbar .fd-shellbar__title { display: none; }
+  .shell-search { min-width: 0; }
+  .start-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+  .start-cards .mem-card__title { font-size: 0.9rem; }
+}

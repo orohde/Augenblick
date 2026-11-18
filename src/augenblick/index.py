@@ -86,12 +86,25 @@ AUTO = {
     "favoriten": ("Favoriten", "rating >= 4"),
     "raw": ("RAW", "ext = 'dng'"),
     "heute": ("An diesem Tag", "substr(taken, 6, 5) = ? AND substr(taken, 1, 4) < ?"),
+    "neu": ("Neu hinzugekommen", "hash IN (SELECT digest FROM seen WHERE ts >= ?)"),
 }
+NEW_DAYS = 30           # "neu": what came in this many days
+
+# Since when a picture is here. Kept by the picture (its hash), not by its path: moving, renaming and
+# sorting it in leave it as old as it is; so do changes that alter the file (written dates, a turn) –
+# the new hash takes the time of the old one. The table outlives a rebuilt index.
+SEEN = "CREATE TABLE IF NOT EXISTS seen (digest TEXT PRIMARY KEY, ts REAL NOT NULL)"
+# what a time in the index (local, YYYY-MM-DDTHH:MM:SS) is as a number, for the pictures already there;
+# a camera whose clock ran ahead does not put its pictures ahead of what comes in later
+TAKEN_TS = ("MIN(COALESCE(CAST(strftime('%s', NULLIF(taken, ''), 'utc') AS REAL), 0), "
+            "CAST(strftime('%s', 'now') AS REAL))")
 
 
 def _auto(name: str) -> tuple[str, list]:
     clause = AUTO[name][1]
     today = date.today()
+    if name == "neu":
+        return clause, [time.time() - NEW_DAYS * 86400]
     return clause, [today.strftime("%m-%d"), today.strftime("%Y")] if name == "heute" else []
 
 
@@ -105,6 +118,13 @@ def _entry(row) -> dict:
     data["regions"] = json.loads(data.get("regions") or "[]")
     data["recipe"] = json.loads(data.get("recipe") or "{}")
     return data
+
+
+def _short(r) -> dict:
+    """A picture as the overview and the slide show want it: what it is, how it is shaped, and a line about it."""
+    return {"key": r["key"], "kind": r["kind"], "taken": r["taken"], "month": r["month"], "w": r["width"],
+            "h": r["height"], "o": r["orientation"] or 1, **({"s": r["seconds"]} if r["kind"] == "video" else {}),
+            "city": r["city"] or "", "country": r["country"] or "", "desc": r["description"] or ""}
 
 
 def _like(text: str) -> str:
@@ -125,6 +145,7 @@ class Index:
         self._dirs: tuple[float, int, list[str]] | None = None     # the folders on disk, kept for a moment
         self.no_dates: frozenset[str] = frozenset()     # areas whose pictures need no date from the camera
         self.changes = 0               # rises with every change, for those who keep something worked out from it
+        self._first = False            # the very first scan: what is found was not "just added", it was always there
         self._open()
 
     # ------------------------------------------------------------ plumbing
@@ -162,6 +183,9 @@ class Index:
                 if not db.execute("SELECT 1 FROM meta WHERE name = ?", ("again-" + name,)).fetchone():
                     db.execute(f"UPDATE photos SET mtime = -1 WHERE {which}")
                     db.execute("INSERT INTO meta VALUES (?, '1')", ("again-" + name,))
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='seen'").fetchone():
+                db.execute(SEEN)        # the pictures already there count as added when they were taken
+                db.execute(f"INSERT OR IGNORE INTO seen SELECT hash, {TAKEN_TS} FROM photos")
             db.execute("CREATE INDEX IF NOT EXISTS photos_misfit ON photos (misfit)")
             db.execute("CREATE INDEX IF NOT EXISTS photos_live ON photos (live)")
             db.execute("CREATE INDEX IF NOT EXISTS photos_source ON photos (source)")
@@ -201,6 +225,8 @@ class Index:
     def _save(self, db: sqlite3.Connection, record: dict) -> None:
         path = record["path"]
         folder = path.rsplit("/", 1)[0]
+        before = db.execute("SELECT hash FROM photos WHERE path=?", (path,)).fetchone()
+        self._seen(db, record, [before["hash"] if before else "", record.get("source") or ""])
         db.execute("DELETE FROM photos WHERE path=?", (path,))
         values = dict(record, key=self._key(db, record["hash"], path), area=folder.split("/", 1)[0], folder=folder,
                       month=record["taken"][:7], keywords="\n".join(record.get("keywords") or []))
@@ -291,6 +317,23 @@ class Index:
         where, params = self._where(areas, **filters)
         return self._all(f"SELECT COUNT(*) n FROM photos WHERE {where}", params)[0]["n"]
 
+    def _seen(self, db: sqlite3.Connection, record: dict, earlier: list[str]) -> None:
+        """Note since when the picture is here – unless it is known. A changed file and a picture worked on
+        here keep the time of the one they come from."""
+        digest = record["hash"]
+        if db.execute("SELECT 1 FROM seen WHERE digest = ?", (digest,)).fetchone():
+            return
+        for other in earlier:
+            row = db.execute("SELECT ts FROM seen WHERE digest = ?", (other,)).fetchone() if other else None
+            if row:
+                db.execute("INSERT INTO seen VALUES (?, ?)", (digest, row["ts"]))
+                return
+        if self._first:
+            ts = db.execute(f"SELECT {TAKEN_TS.replace('taken', '?')}", (record["taken"],)).fetchone()[0]
+        else:
+            ts = time.time()
+        db.execute("INSERT INTO seen VALUES (?, ?)", (digest, ts))
+
     def scan(self, workers: int = 2) -> dict:
         """Bring the index in line with the folders: new and changed files in, vanished ones out."""
         if not self._scan.acquire(blocking=False):
@@ -306,6 +349,7 @@ class Index:
             try:
                 known = {r["path"]: (r["size"], r["mtime"]) for r in db.execute("SELECT path, size, mtime FROM photos")}
                 gone = [p for p in known if p not in found]
+                self._first = not known
                 todo = [p for p, state in found.items() if known.get(p) != state]
                 self.progress.update(running=True, done=0, total=len(todo))
                 if gone:
@@ -333,6 +377,7 @@ class Index:
                 db.close()
             return {"added": len(todo), "removed": len(gone)}
         finally:
+            self._first = False
             self.progress.update(running=False, last=time.time(), seconds=round(time.time() - started, 1))
             self._scan.release()
 
@@ -487,6 +532,30 @@ class Index:
             "ORDER BY taken DESC, id", params + [month])
         return [{"key": r["key"], "kind": r["kind"], "taken": r["taken"], "w": r["width"], "h": r["height"],
                  "o": r["orientation"] or 1, **({"s": r["seconds"]} if r["kind"] == "video" else {})} for r in rows]
+
+    def recent(self, areas: list[str], limit: int = 24) -> list[dict]:
+        """The pictures that came in last, newest first – by when they came, not when they were taken."""
+        where, params = self._where(areas)
+        rows = self._all(
+            f"SELECT key, kind, taken, month, width, height, orientation, seconds, city, country, description, ts "
+            f"FROM photos JOIN seen ON seen.digest = photos.hash WHERE {where} "
+            "ORDER BY ts DESC, taken DESC, photos.id LIMIT ?", params + [limit])
+        return [dict(_short(r), added=r["ts"]) for r in rows]
+
+    def sequence(self, areas: list[str], limit: int = 100000, **filters) -> list[dict]:
+        """Everything a choice holds, oldest first – the order in which it is looked at, one after the other."""
+        where, params = self._where(areas, **filters)
+        rows = self._all(
+            f"SELECT key, kind, taken, month, width, height, orientation, seconds, city, country, description "
+            f"FROM photos WHERE {where} ORDER BY taken, id LIMIT ?", params + [limit])
+        return [_short(r) for r in rows]
+
+    def cover(self, areas: list[str], **filters) -> dict | None:
+        """The picture that stands for a choice: the best rated, of those the newest."""
+        where, params = self._where(areas, **filters)
+        rows = self._all(f"SELECT key, orientation FROM photos WHERE {where} AND kind = 'image' "
+                         "AND error = '' ORDER BY COALESCE(rating, 0) DESC, taken DESC LIMIT 1", params)
+        return {"key": rows[0]["key"], "o": rows[0]["orientation"] or 1} if rows else None
 
     def places(self, areas: list[str], **filters) -> list[list]:
         """Every photo that knows where it was taken: [key, lat, lon, month, orientation], newest first."""

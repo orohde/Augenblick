@@ -1,7 +1,7 @@
 """Per-person view settings that follow the account, not the browser.
 
 Kept in ``prefs.json`` in the data folder, one entry per user name: the language of the
-interface. (Taken over from Ordnung!, which also keeps the expanded folders of its tree here.)
+interface and the albums pinned to the start page. (Taken over from Ordnung!, which also keeps the expanded folders of its tree here.)
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from pathlib import Path
 LANGUAGES = ("de", "en", "fr", "it")
 MAX_PATHS = 5000
 MAX_PATH_LEN = 1000
+MAX_PINS = 100
 
 
 class PrefsStore:
@@ -37,7 +38,17 @@ class PrefsStore:
     def get(self, user: str) -> dict:
         with self._lock:
             p = self._load().get(user, {})
-        return {"tree_open": list(p.get("tree_open", [])), "language": p.get("language", "")}
+        return {"tree_open": list(p.get("tree_open", [])), "language": p.get("language", ""),
+                "pins": list(p.get("pins", []))}
+
+    def set_pins(self, user: str, albums: list[str]) -> list[str]:
+        """The albums pinned to the start page, in their order."""
+        clean = list(dict.fromkeys(str(a).strip("/") for a in albums if a and len(str(a)) <= MAX_PATH_LEN))[:MAX_PINS]
+        with self._lock:
+            users = self._load()
+            users.setdefault(user, {})["pins"] = clean
+            self._save(users)
+        return clean
 
     def set_language(self, user: str, language: str) -> str:
         if language not in LANGUAGES:

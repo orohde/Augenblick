@@ -47,6 +47,16 @@ def model():
 
 
 @pytest.fixture
+def greta_of():
+    def make(client):
+        client.post("/api/users", json={"name": "greta", "password": PASSWORD, "areas": {"Familie": "write"}})
+        guest = browser(client.app)
+        guest.post("/api/login", json={"username": "greta", "password": PASSWORD})
+        return guest
+    return make
+
+
+@pytest.fixture
 def rw(settings):
     app = create_app(dataclasses.replace(settings, readonly=False), background=False)
     app.state.index.scan()
@@ -105,6 +115,47 @@ def test_ai_date_guess_and_bad_answers(rw, model, monkeypatch):
     assert "keines im Bild" in FakeModel.seen[-1]["messages"][1]["content"][1]["text"]
     monkeypatch.setattr(FakeModel, "answer", "Das ist ein schönes Bild.")
     assert rw.post(f"/api/photos/{key}/ai", json={}).status_code == 422
+
+
+def test_the_ai_names_a_place_and_doubts_one_far_off(rw, model, monkeypatch):
+    rw.put("/api/ai", json={"enabled": True, "provider": "ollama", "base_url": model, "model": "sehmodell"})
+    stettin = '{"description": "Hafen", "keywords": [], "date": null, "note": "Hakenterrasse", ' \
+              '"place": {"name": "Stettin, Polen", "lat": 53.4285, "lon": 14.5528}}'
+    monkeypatch.setattr(FakeModel, "answer", stettin)
+    nowhere = rw.get("/api/photos?month=1981-05").json()[0]["key"]          # no coordinates in the picture
+    body = rw.post(f"/api/photos/{nowhere}/ai", json={}).json()
+    assert body["place"] == {"name": "Stettin, Polen", "lat": 53.4285, "lon": 14.5528}
+    assert "\"place\"" in FakeModel.seen[-1]["messages"][0]["content"]
+    assert rw.get(f"/api/photos/{nowhere}").json()["lat"] is None               # still only a proposal
+
+    there = rw.get("/api/photos?month=2024-07").json()[0]["key"]           # taken at 49.5, 7.75
+    place = rw.post(f"/api/photos/{there}/ai", json={}).json()["place"]
+    assert place["far"] is True and 600 < place["km"] < 700
+    monkeypatch.setattr(FakeModel, "answer", stettin.replace("53.4285", "49.6").replace("14.5528", "7.8"))
+    assert rw.post(f"/api/photos/{there}/ai", json={}).json()["place"]["far"] is False
+
+    for wrong in ('"place": {"name": "x", "lat": "hier", "lon": 7}', '"place": {"lat": 95, "lon": 7}',
+                  '"place": {"lat": 0, "lon": 0}', '"place": "Stettin"'):
+        monkeypatch.setattr(FakeModel, "answer", '{"description": "", "keywords": [], "date": null, ' + wrong + '}')
+        assert rw.post(f"/api/photos/{nowhere}/ai", json={}).json()["place"] is None, wrong
+
+
+def test_fixed_places_are_kept_and_told_to_the_ai(rw, model, greta_of):
+    assert rw.get("/api/spots").json() == []
+    saved = rw.put("/api/spots", json={"spots": [{"name": " Zuhause ", "lat": 49.86, "lon": 7.8},
+                                                 {"name": "Eltern", "lat": 49.5, "lon": 8.1}]})
+    assert saved.json() == [{"name": "Zuhause", "lat": 49.86, "lon": 7.8}, {"name": "Eltern", "lat": 49.5, "lon": 8.1}]
+    assert rw.put("/api/spots", json={"spots": [{"name": "A", "lat": 1, "lon": 1}, {"name": "a", "lat": 2, "lon": 2}]}).status_code == 422
+    assert rw.put("/api/spots", json={"spots": [{"name": "A", "lat": 91, "lon": 1}]}).status_code == 422
+    assert len(rw.get("/api/spots").json()) == 2                              # a refused list changes nothing
+    guest = greta_of(rw)
+    assert guest.get("/api/spots").status_code == 200 and guest.put("/api/spots", json={"spots": []}).status_code == 403
+    rw.put("/api/ai", json={"enabled": True, "provider": "ollama", "base_url": model, "model": "sehmodell"})
+    key = rw.get("/api/photos?month=1981-05").json()[0]["key"]
+    rw.post(f"/api/photos/{key}/ai", json={})
+    sent = FakeModel.seen[-1]["messages"]
+    assert "Zuhause: 49.86000, 7.80000; Eltern: 49.50000, 8.10000" in sent[1]["content"][1]["text"]
+    assert "festen Orte" in sent[0]["content"]
 
 
 def test_ai_respects_areas_and_rights(rw, model):
@@ -171,3 +222,40 @@ def test_the_ai_describes_what_is_there_and_it_can_be_taken_back(rw, model):
     assert entry["user"] == "KI"
     assert rw.post(f"/api/journal/{entry['id']}/undo").status_code == 200
     assert rw.get(f"/api/photos/{other['key']}").json()["keywords"] == []
+
+
+def test_a_run_over_the_stock_goes_on_after_a_restart(rw, model, settings):
+    import json, time
+
+    def wait():
+        for _ in range(600):
+            if not rw.get("/api/job").json()["running"]:
+                return
+            time.sleep(0.1)
+
+    note = settings.data / "aistock.json"
+    resume = rw.app.state.resume_stock
+    assert resume() is False                                    # nothing was under way
+    note.write_text("kaputt")
+    assert resume() is False and not note.exists()              # a note nobody can read is thrown away
+    note.write_text(json.dumps({"user": "oliver", "lang": "de", "model": "", "areas": []}))
+    assert resume() is False and not note.exists()              # the AI is switched off: the run is over
+
+    rw.put("/api/ai", json={"enabled": True, "provider": "ollama", "base_url": model, "model": "sehmodell"})
+    waiting = rw.get("/api/ai/stock").json()["waiting"]
+    assert waiting > 1
+    # a trial run of one picture leaves no note; it ends by itself
+    assert rw.post("/api/ai/stock", json={"limit": 1}).json()["total"] == 1
+    assert not note.exists()
+    wait()
+    assert rw.get("/api/ai/stock").json()["waiting"] == waiting - 1
+
+    # the program was stopped in the middle of a run: the note is still there at the next start
+    note.write_text(json.dumps({"user": "oliver", "lang": "de", "model": "", "areas": []}))
+    assert resume() is True
+    wait()
+    job = rw.get("/api/job").json()
+    assert job["kind"] == "aistock" and job["failed"] == 0 and job["done"] == waiting - 1
+    assert rw.get("/api/ai/stock").json()["waiting"] == 0
+    assert not note.exists()                                    # it came to its end: nothing to pick up again
+    assert resume() is False

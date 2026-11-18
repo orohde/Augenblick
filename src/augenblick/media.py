@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -592,8 +593,8 @@ def read_video(path: Path) -> dict:
     if not tool:
         return {}
     try:
-        done = subprocess.run([tool, "-j", "-n", "-api", "QuickTimeUTC=1", *(f"-{tag}" for tag in _VIDEO_TAGS),
-                               str(path)], capture_output=True, text=True, timeout=120)
+        done = subprocess.run([tool, "-j", "-n", "-b", "-api", "QuickTimeUTC=1", *(f"-{tag}" for tag in _VIDEO_TAGS),
+                               "-XMP", str(path)], capture_output=True, text=True, timeout=120)
         tags = json.loads(done.stdout)[0]
     except (OSError, subprocess.SubprocessError, ValueError, IndexError):
         return {}
@@ -618,6 +619,17 @@ def read_video(path: Path) -> dict:
     live = str(tags.get("ContentIdentifier") or "").strip()
     if _LIVE_ID.fullmatch(live):
         meta["live"] = live.upper()
+    # words, albums, rating and who filmed it: in XMP, as with pictures
+    packet = tags.get("XMP")
+    if isinstance(packet, str) and packet.startswith("base64:"):
+        try:
+            packet = base64.b64decode(packet[7:])
+        except ValueError:
+            packet = None
+    xmp = read_xmp(packet if isinstance(packet, (str, bytes)) else None)
+    for key in ("description", "creator", "keywords", "albums", "rating"):
+        if key in xmp:
+            meta[key] = xmp[key]
     return meta
 
 

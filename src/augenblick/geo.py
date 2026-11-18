@@ -45,6 +45,12 @@ def _distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * EARTH_KM * math.asin(min(1.0, math.sqrt(h)))
 
 
+
+def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Kilometres between two points on the earth's surface."""
+    return _distance(lat1, lon1, lat2, lon2)
+
+
 class Geo:
     """Reads the boiled-down list. Without the file every question is answered with nothing."""
 

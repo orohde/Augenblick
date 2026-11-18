@@ -53,7 +53,7 @@
     <header class="fd-shellbar">
       <div class="fd-shellbar__group fd-shellbar__group--product">
         <button id="btn-tree" class="fd-button fd-button--transparent fd-shellbar__button only-mobile" type="button" aria-label="Ordner">&#9776;</button>
-        <a id="home" class="shell-home" href="#/" title="Zur Zeitleiste">
+        <a id="home" class="shell-home" href="#/start" title="Zur Startseite">
           <img src="icon.svg" alt="" class="shell-logo">
           <span class="fd-shellbar__title">Augenblick!</span>
         </a>
@@ -62,6 +62,7 @@
         <input id="search" class="fd-input" type="search" autocomplete="off" placeholder="Suchen: Name, Ordner, Beschreibung, Schlagwort, Ort">
       </div>
       <div class="fd-shellbar__group fd-shellbar__group--actions">
+        <button id="btn-update" class="fd-button fd-shellbar__button upd-btn" type="button" hidden></button>
         <a id="btn-inbox" class="fd-button fd-shellbar__button" href="#/eingang" title="Neu hochgeladene Bilder, noch nicht einsortiert" hidden>Eingang<span id="inbox-badge" class="inbox-badge" hidden></span></a>
         <button id="btn-theme" class="fd-button fd-shellbar__button" type="button" aria-label="Hell oder dunkel">&#9680;</button>
         <a id="btn-settings" class="fd-button fd-shellbar__button" href="#/einstellungen/konto" aria-label="Einstellungen" title="Einstellungen">&#9881;</a>
@@ -94,6 +95,7 @@
 
       <div class="layout">
         <aside id="tree-panel" class="tree-panel">
+          <a class="tree-row side__link side__link--top" href="#/"><span class="tree-caret is-leaf" aria-hidden="true">›</span><span class="tree-name">Zeitleiste</span></a>
           <section id="people-box" class="side" data-section="personen" hidden>
             <button class="side__head" type="button" aria-expanded="true" aria-controls="side-personen"><span class="tree-caret is-open" aria-hidden="true">›</span>Personen</button>
             <div id="side-personen" class="side__body">
@@ -122,6 +124,8 @@
             <h2 id="grid-title" class="fd-title fd-title--h4">Zeitleiste</h2>
             <span id="grid-count" class="grid-count"></span>
             <button id="btn-rename-person" class="fd-button fd-button--compact" type="button" hidden title="Gibt dieser Person in allen Bildern einen anderen Namen – mit einem Namen, den es schon gibt, werden beide zu einer Person">Umbenennen oder zusammenführen</button>
+            <button id="btn-pin" class="fd-button fd-button--compact fd-button--transparent pin-btn" type="button" hidden aria-pressed="false">☆</button>
+            <button id="btn-show" class="fd-button fd-button--compact" type="button" hidden title="Die Bilder bildschirmfüllend ansehen, eins nach dem anderen – auch als Diashow">▶ Ansehen</button>
             <button id="btn-to-album" class="fd-button fd-button--compact" type="button" hidden title="Schreibt in jedes Bild dieses Ordners, in welchem Ordner es liegt – als Album">Ordner als Album merken</button>
             <span id="mem-tools" class="mem-tools" hidden>
               <button id="mem-pick" class="fd-button fd-button--compact" type="button" title="Zwischen einer Auswahl und allen Bildern dieser Tage wechseln"></button>
@@ -136,6 +140,32 @@
           </div>
           <p id="mem-text" class="mem-text" hidden></p>
           <div id="memories" class="memories" hidden></div>
+          <div id="start" class="start" hidden>
+            <section class="start-section">
+              <div class="start-head">
+                <h3>Angepinnte Alben</h3>
+                <a class="start-all" href="#/">Zur Zeitleiste →</a>
+              </div>
+              <div id="start-pins" class="memories start-cards"></div>
+              <p id="start-nopins" class="start-hint" hidden>Noch kein Album angepinnt. Öffne ein Album und klicke oben auf den Stern – oder klicke in der Seitenleiste mit der rechten Maustaste auf ein Album.</p>
+            </section>
+            <section class="start-section">
+              <div class="start-head">
+                <h3>Zuletzt hinzugekommen</h3>
+                <button id="start-show" class="fd-button fd-button--compact" type="button" hidden title="Diese Bilder bildschirmfüllend ansehen">▶ Ansehen</button>
+                <a class="start-all" href="#/auto/neu">Alles Neue der letzten 30 Tage →</a>
+              </div>
+              <div id="start-recent" class="month__grid start-recent"></div>
+              <p id="start-norecent" class="start-hint" hidden>Noch keine Bilder.</p>
+            </section>
+            <section id="start-mem-box" class="start-section" hidden>
+              <div class="start-head">
+                <h3>Erinnerungen</h3>
+                <a class="start-all" href="#/erinnerungen">Alle Erinnerungen →</a>
+              </div>
+              <div id="start-mems" class="memories start-cards"></div>
+            </section>
+          </div>
           <div id="grid"></div>
           <div id="places" class="places" hidden></div>
           <p id="grid-empty" class="grid-empty" hidden>Hier ist nichts zu sehen.</p>
@@ -152,6 +182,7 @@
         <select id="sel-move" class="fd-input toolbar__select" aria-label="In einen anderen Bereich verschieben" hidden></select>
         <button id="sel-propose" class="fd-button" type="button" title="Die KI sieht sich die ausgewählten Bilder an und schlägt Beschreibung und Schlagworte vor – nichts wird geschrieben" hidden>KI-Vorschläge holen</button>
         <select id="sel-take" class="fd-input toolbar__select" aria-label="Vorschläge übernehmen und einsortieren" hidden></select>
+        <button id="sel-show" class="fd-button" type="button" title="Die ausgewählten Bilder bildschirmfüllend ansehen">▶ Ansehen</button>
         <button id="sel-delete" class="fd-button" type="button">Löschen</button>
         <button id="sel-all" class="fd-button fd-button--transparent" type="button" title="Alle Bilder der Ansicht auswählen, über alle Monate">Alles auswählen</button>
         <button id="sel-none" class="fd-button fd-button--transparent" type="button">Auswahl aufheben</button>
@@ -367,6 +398,18 @@
             </div>
           </form>
           <div id="sort-moves" class="card sort-moves" hidden></div>
+          <form id="spot-form" class="card" autocomplete="off">
+            <div class="pane-head">
+              <h4 class="fd-title fd-title--h5 card-title">Feste Orte</h4>
+              <button id="spot-add" class="fd-button" type="button">Neuer Ort</button>
+            </div>
+            <p class="field-hint">Orte, die immer wieder vorkommen – Zuhause, die Eltern, die Ferienwohnung. Beim Ändern eines Bildes oder mehrerer Bilder stehen sie zur Auswahl, und die KI erkennt sie wieder, wenn sie einen Ort vorschlägt. Ins Bild geschrieben werden nur die Koordinaten.</p>
+            <div id="spot-rows" class="spot-rows"></div>
+            <div class="form-actions">
+              <span id="spot-msg" class="form-msg"></span>
+              <button class="fd-button fd-button--emphasized" type="submit">Speichern</button>
+            </div>
+          </form>
         </section>
 
         <section class="set-pane" data-pane="personen" hidden>
@@ -414,6 +457,18 @@
         <section class="set-pane" data-pane="ki" hidden>
           <h3 class="fd-title fd-title--h4">KI</h3>
           <p class="set-hint">Eine KI kann sich ein Bild ansehen und Beschreibung, Schlagworte und – bei Bildern ohne Aufnahmedatum – ein Datum vorschlagen. Geschrieben wird nichts von selbst: Der Vorschlag landet im Bearbeiten-Formular, du entscheidest. Das Bild geht dafür verkleinert an den gewählten Anbieter.</p>
+          <div class="card mcp-card">
+            <h4 class="fd-title fd-title--h5 card-title">Zugang für KI-Assistenten (MCP)</h4>
+            <p class="field-hint">Über diesen Zugang kann ein KI-Assistent wie Claude in Augenblick! suchen, Bilder ansehen und – mit einem Schlüssel, der schreiben darf – Datum, Ort, Beschreibung, Schlagworte, Alben und Namen in die Bilder schreiben, Bilder verschieben oder in den Papierkorb legen. Jede Änderung steht unter Änderungen und lässt sich zurücknehmen; endgültig löschen kann der Assistent nichts.</p>
+            <div class="form-grid">
+              <span></span>
+              <label class="check"><input type="checkbox" id="mcp-on"> <span>MCP-Zugang einschalten</span></label>
+              <span class="fd-form-label">Adresse</span>
+              <code id="mcp-url" class="mcp-url"></code>
+            </div>
+            <p class="field-hint">Der Assistent meldet sich mit einem API-Schlüssel an, nur lesend oder lesend und schreibend. <a class="fd-link" href="#/einstellungen/api">Zu den API-Schlüsseln</a></p>
+            <span id="mcp-msg" class="form-msg" role="status"></span>
+          </div>
           <form id="ai-form" autocomplete="off" data-bwignore="true">
             <div class="card">
               <h4 class="fd-title fd-title--h5 card-title">Anbieter</h4>
@@ -528,16 +583,27 @@
           <p class="set-hint">Alles, was die Oberfläche kann, geht auch per REST-API unter /api/, für Skripte, Kurzbefehle oder Home Assistant.</p>
           <div class="card">
             <h4 class="fd-title fd-title--h5 card-title">API-Schlüssel</h4>
-            <div class="inline api-key-row">
-              <input class="fd-input api-key" id="api-key" type="text" readonly autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
-              <button id="api-eye" class="fd-button" type="button" aria-pressed="false" aria-label="Schlüssel anzeigen" title="Schlüssel anzeigen oder verbergen">&#128065;</button>
-              <button id="api-copy" class="fd-button" type="button">Kopieren</button>
-              <button id="api-new" class="fd-button" type="button">Neu erzeugen</button>
-              <button id="api-del" class="fd-button fd-button--transparent" type="button">Löschen</button>
+            <p class="field-hint">Jedes Programm bekommt seinen eigenen Schlüssel, dann lässt sich einer allein widerrufen. „Lesen und schreiben“ darf alles wie ein Administrator, „Nur lesen“ sieht alle Bereiche, ändert aber nichts. Gespeichert wird nur ein Fingerabdruck des Schlüssels – er wird genau einmal angezeigt, beim Anlegen.</p>
+            <table class="fd-table up-table api-table"><tbody id="api-keys" class="fd-table__body"></tbody></table>
+            <div id="api-fresh" class="up-fresh" hidden>
+              <span id="api-fresh-for"></span>
+              <div class="inline api-key-row">
+                <input class="fd-input api-key" id="api-key" type="text" readonly autocomplete="off" spellcheck="false" data-bwignore="true" data-1p-ignore="true" data-lpignore="true" data-form-type="other">
+                <button id="api-eye" class="fd-button" type="button" aria-pressed="false" aria-label="Schlüssel anzeigen" title="Schlüssel anzeigen oder verbergen">&#128065;</button>
+                <button id="api-copy" class="fd-button" type="button">Kopieren</button>
+              </div>
+              <span class="hint">Jetzt kopieren – der Schlüssel wird nicht wieder angezeigt.</span>
+              <pre class="api-example"><code id="api-example"></code></pre>
             </div>
+            <form id="api-add" class="inline up-add">
+              <input class="fd-input" id="api-name" maxlength="60" placeholder="Name, z. B. Claude oder Home Assistant" aria-label="Name des neuen API-Schlüssels" required>
+              <select class="fd-input" id="api-right" aria-label="Recht des neuen API-Schlüssels">
+                <option value="write">Lesen und schreiben</option>
+                <option value="read">Nur lesen</option>
+              </select>
+              <button class="fd-button" type="submit">Schlüssel anlegen</button>
+            </form>
             <p id="api-state" class="field-hint"></p>
-            <p class="field-hint">Programme schicken den Schlüssel bei jeder Anfrage mit. Er öffnet alles wie ein Administrator, also gehört er nur in vertrauenswürdige Skripte. Neu erzeugen macht den alten sofort ungültig.</p>
-            <pre class="api-example"><code id="api-example"></code></pre>
           </div>
           <div class="card">
             <h4 class="fd-title fd-title--h5 card-title">Upload vom Telefon (WebDAV)</h4>
@@ -634,8 +700,10 @@
             </div>
             <p id="job-long-text" class="job-text"></p>
             <progress id="job-long-bar" class="job-bar" max="1" value="0" hidden></progress>
+            <p id="job-long-head" class="job-text" hidden></p>
             <ul id="job-long-errors" class="job-errors"></ul>
-            <p class="field-hint">Dazu gehören „Ordner als Album merken“, „Personen aus Immich übernehmen“ und „Person umbenennen“. Es läuft immer nur einer. Ein Neustart von Augenblick! bricht ihn ab; was bis dahin geschrieben wurde, bleibt.</p>
+            <p class="inline"><button id="job-seen" class="fd-button fd-button--transparent admin-only" type="button" hidden>Gesehen, Liste ausblenden</button></p>
+            <p class="field-hint">Dazu gehören zum Beispiel „KI beschreibt den Bestand“, „Ordner als Album merken“, „Kopien auflösen“ und „Person umbenennen“. Es läuft immer nur einer. Übersprungene Bilder bleiben, wie sie waren – ein Klick auf den Namen öffnet das Bild. Ein Neustart von Augenblick! bricht den Auftrag ab; was bis dahin geschrieben wurde, bleibt. Nur „KI beschreibt den Bestand“ macht danach von selbst weiter.</p>
           </div>
           <p id="job-msg" class="form-msg" role="status"></p>
         </section>
@@ -644,6 +712,14 @@
           <h3 class="fd-title fd-title--h4">System</h3>
           <p id="sys-line" class="field-hint"></p>
           <button id="btn-rescan" class="fd-button admin-only" type="button">Ordner jetzt neu einlesen</button>
+          <div id="upd-card" class="card upd-card admin-only">
+            <h4 class="fd-title fd-title--h5">Neue Versionen</h4>
+            <label class="check"><input type="checkbox" id="upd-on"> <span>Einmal am Tag nach neuen Versionen sehen</span></label>
+            <p class="field-hint">Augenblick! fragt dafür bei version.worldgate.de nach. Übertragen werden nur App-Name, installierte Version und Installationsart (z. B. Docker) – keine Kennung, keine Fotos, keine Namen. Dort werden nur Tagessummen gezählt. Dauerhaft abschalten lässt es sich auch mit VERSIONSPRUEFUNG=0.</p>
+            <p id="upd-state" class="field-hint"></p>
+            <div><button id="upd-check" class="fd-button" type="button">Jetzt prüfen</button>
+              <span id="upd-msg" class="form-msg" role="status"></span></div>
+          </div>
           <p id="sys-support" class="field-hint" hidden>Augenblick! ist freie Software und kostet nichts. Wenn es dir hilft:
             <a id="sys-support-link" class="fd-link" target="_blank" rel="noopener">die Arbeit daran unterstützen</a>.</p>
         </section>
@@ -724,6 +800,26 @@
   </section>
 
   <!-- ============================== Viewer ============================== -->
+  <!-- ============================== Looking at pictures ============================== -->
+  <div id="show" class="show" hidden tabindex="-1">
+    <img id="show-a" class="show__pic" alt="">
+    <img id="show-b" class="show__pic" alt="">
+    <video id="show-video" class="show__pic show__video" controls playsinline hidden></video>
+    <p id="show-caption" class="show__caption" hidden></p>
+    <div id="show-bar" class="show__bar">
+      <button id="show-prev" type="button" aria-label="Vorheriges Bild" title="Vorheriges Bild (←)">‹</button>
+      <button id="show-play" type="button" aria-label="Diashow starten (Leertaste)">▶</button>
+      <button id="show-next" type="button" aria-label="Nächstes Bild" title="Nächstes Bild (→)">›</button>
+      <span id="show-pos" class="show__pos"></span>
+      <select id="show-secs" aria-label="Wie lange jedes Bild stehen bleibt" title="Wie lange jedes Bild stehen bleibt">
+        <option value="3">3 s</option><option value="5">5 s</option><option value="10">10 s</option><option value="20">20 s</option><option value="60">60 s</option>
+      </select>
+      <button id="show-shuffle" type="button" aria-pressed="false" title="Zufällige Reihenfolge" aria-label="Zufällige Reihenfolge">⤮</button>
+      <button id="show-info" type="button" aria-pressed="true" title="Datum, Ort und Beschreibung einblenden (Taste I)" aria-label="Datum, Ort und Beschreibung einblenden">ⓘ</button>
+      <button id="show-close" type="button" aria-label="Beenden" title="Beenden (Esc)">✕</button>
+    </div>
+  </div>
+
   <div id="viewer" class="viewer" hidden>
     <div class="viewer__stage">
       <button id="v-prev" class="viewer__nav viewer__nav--prev" type="button" aria-label="Vorheriges Bild">&#8249;</button>
@@ -742,6 +838,7 @@
     <aside class="viewer__info">
       <div class="viewer__bar">
         <button id="v-close" class="fd-button fd-button--transparent" type="button" aria-label="Schließen">&#10005;</button>
+        <button id="v-show" class="fd-button" type="button" title="Ab diesem Bild bildschirmfüllend ansehen (Taste F)" hidden>▶ Ansehen</button>
         <a id="v-download" class="fd-button" href="#">Original laden</a>
         <button id="v-live" class="fd-button" type="button" title="Den kurzen Film zu diesem Foto abspielen" hidden>&#9654; Live</button>
       </div>
@@ -765,6 +862,7 @@
           <label class="check inbox-take__desc"><input id="v-inbox-desc-on" type="checkbox" checked> <span id="v-inbox-desc"></span></label>
           <div id="v-inbox-words" class="inbox-take__words" aria-label="Vorgeschlagene Schlagworte – anklicken schließt eins aus"></div>
           <label id="v-inbox-date-row" class="check" hidden><input id="v-inbox-date-on" type="checkbox"> <span id="v-inbox-date"></span></label>
+          <label id="v-inbox-place-row" class="check" hidden><input id="v-inbox-place-on" type="checkbox"> <span id="v-inbox-place"></span></label>
         </div>
         <div class="inbox-take__go">
           <select id="v-inbox-area" class="fd-input" aria-label="In welchen Bereich"></select>
@@ -808,6 +906,10 @@
           <input class="fd-input" id="e-place" autocomplete="off" placeholder="leer heißt: kein Ort">
           <button id="e-map" class="fd-button" type="button">Karte …</button>
         </div>
+        <div class="place-row spot-row">
+          <select id="e-spot" class="fd-input spot-pick" aria-label="Fester Ort" hidden></select>
+          <button id="e-spot-save" class="fd-button fd-button--transparent admin-only" type="button" title="Die Koordinaten oben unter einem Namen merken">Als festen Ort merken …</button>
+        </div>
         <label class="fd-form-label" for="e-desc">Beschreibung</label>
         <textarea class="fd-textarea" id="e-desc" rows="3" maxlength="2000"></textarea>
         <label class="fd-form-label" for="e-creator">Fotograf</label>
@@ -836,6 +938,23 @@
     <p id="busy-text" aria-live="polite"></p>
   </dialog>
 
+  <dialog id="upd-dlg" class="batch upd-dlg" aria-labelledby="upd-dlg-title">
+    <h3 id="upd-dlg-title" class="fd-title fd-title--h5"></h3>
+    <p id="upd-dlg-intro" class="field-hint"></p>
+    <h4 class="upd-sub">So aktualisierst du</h4>
+    <ul class="upd-how">
+      <li><b>Unraid:</b> Reiter Docker, beim Container auf „update ready“ klicken und „Apply update“ wählen.</li>
+      <li><b>Synology:</b> Container Manager → Image → beim Image von Augenblick! „Update verfügbar“ → Aktualisieren.</li>
+      <li><b>Docker Compose:</b> im Ordner mit der compose.yml: <code>docker compose pull &amp;&amp; docker compose up -d</code></li>
+    </ul>
+    <h4 class="upd-sub">Was ist neu</h4>
+    <div id="upd-dlg-notes" class="upd-notes" translate="no"></div>
+    <div class="upd-actions">
+      <a id="upd-dlg-link" class="fd-button fd-button--transparent" target="_blank" rel="noopener">Alle Änderungen ↗</a>
+      <button id="upd-dlg-close" class="fd-button fd-button--emphasized" type="button">Schließen</button>
+    </div>
+  </dialog>
+
   <!-- ============================== Several at once ============================== -->
   <dialog id="batch" class="batch">
     <form id="batch-form" method="dialog">
@@ -860,6 +979,7 @@
           <option value="">nicht ändern</option><option value="set">setzen auf</option><option value="clear">entfernen</option>
         </select>
         <span id="b-place-row" class="place-row" hidden>
+          <select id="b-spot" class="fd-input spot-pick" aria-label="Fester Ort" hidden></select>
           <input class="fd-input" id="b-place" autocomplete="off" placeholder="49.84512, 7.86301" aria-label="Breite, Länge">
           <button id="b-map" class="fd-button" type="button">Karte …</button>
         </span>

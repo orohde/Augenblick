@@ -25,7 +25,7 @@ from PIL import Image, ImageChops, ImageOps, ImageStat
 from .index import Index
 from .journal import Journal
 from .media import (ALBUM_ROOT, HEIF_EXT, HEIF_ORIENTATION, clean_creator, clean_name, file_hash, heif_image_hash, heif_turn, is_face, jpeg_image_hash,
-                    RAW_EXT, SOURCE_MARK, Frame, clean_recipe, develop, jpeg_trailer, kind_of, people_of, read_image,
+                    RAW_EXT, SOURCE_MARK, Frame, clean_recipe, develop, jpeg_trailer, kind_of, people_of, read_image, read_video,
                     turn_box)
 
 log = logging.getLogger("augenblick.edit")
@@ -53,7 +53,20 @@ LIST_TAGS = WORD_TAGS + WORD_EXTRA + (TREE_TAG,)
 REGION_TAG = "XMP-mwg-rs:RegionInfo"         # marked faces with their names, relative to the stored picture
 TURN_TAGS = ("IFD0:Orientation", "IFD1:Orientation", "XMP-tiff:Orientation", "ExifIFD:ExifImageWidth",
              "ExifIFD:ExifImageHeight", "IFD1:ThumbnailLength", "PreviewImageLength", REGION_TAG)
-SAME_FACE = 0.3     # two boxes that overlap this much (intersection over union) mean the same face
+# Films keep their data in QuickTime boxes: the date and place where phones put them, the words in XMP
+# as with pictures. Only the QuickTime family (MOV, MP4) can be written; older formats stay as they are.
+FILM_EXT = ("mov", "mp4", "m4v", "3gp")
+FILM_DATE_TAGS = ("Keys:CreationDate", "QuickTime:CreateDate")
+FILM_DATE_EXTRA = ("XMP-xmp:CreateDate", "XMP-exif:DateTimeOriginal", "XMP-photoshop:DateCreated")
+FILM_PLACE_TAGS = ("Keys:GPSCoordinates",)
+FILM_PLACE_EXTRA = ("UserData:GPSCoordinates", "ItemList:GPSCoordinates", "XMP-exif:GPSLatitude",
+                    "XMP-exif:GPSLongitude")
+FILM_TEXT_TAGS = ("XMP-dc:Description",)
+FILM_TEXT_EXTRA = ("Keys:Description", "ItemList:Description", "UserData:Description")
+FILM_CREATOR_TAGS = ("XMP-dc:Creator",)
+FILM_META_TAGS = (FILM_DATE_TAGS + FILM_DATE_EXTRA + FILM_PLACE_TAGS + FILM_PLACE_EXTRA + FILM_TEXT_TAGS
+                  + FILM_TEXT_EXTRA + WORD_TAGS + RATING_TAGS + FILM_CREATOR_TAGS + (TREE_TAG,))
+SAME_FACE = 0.3    # two boxes that overlap this much (intersection over union) mean the same face
 
 # EXIF orientation n says: do this to the stored picture to see it upright.
 PIL_OPS = {2: Image.Transpose.FLIP_LEFT_RIGHT, 3: Image.Transpose.ROTATE_180, 4: Image.Transpose.FLIP_TOP_BOTTOM,
@@ -128,7 +141,49 @@ def _alike(a, b) -> bool:
         x, y = float(a), float(b)
         return abs(x - y) <= 1e-7 * max(1.0, abs(x))
     except (TypeError, ValueError):
-        return _tidy(str(a)) == _tidy(str(b))
+        pass
+    try:        # several numbers in one value, like the "lat lon" of a film
+        xs, ys = [float(v) for v in str(a).split()], [float(v) for v in str(b).split()]
+        if len(xs) > 1 and len(xs) == len(ys):
+            return all(abs(x - y) <= 1e-7 * max(1.0, abs(x)) for x, y in zip(xs, ys))
+    except ValueError:
+        pass
+    return _tidy(str(a)) == _tidy(str(b))
+
+
+def _is_film(path: Path) -> bool:
+    return kind_of(path.suffix.lower().lstrip(".")) == "video"
+
+
+def _utc(path: Path) -> list[str]:
+    """A film keeps its times in UTC. Read and written that way, a time is the wall-clock time here,
+    with the zone it is in – the same way the index reads it."""
+    return ["-api", "QuickTimeUTC=1"] if _is_film(path) else []
+
+
+def _local_zone(stamp: str) -> str:
+    """The zone this machine's clock was in at that moment, as +01:00."""
+    try:
+        offset = datetime.strptime(stamp, "%Y:%m:%d %H:%M:%S").astimezone().strftime("%z")
+    except (ValueError, OverflowError, OSError):
+        return ""
+    return f"{offset[:3]}:{offset[3:]}" if len(offset) == 5 else ""
+
+
+def _film_hash(path: Path) -> str:
+    """A fingerprint of every stream in the film – picture, sound and the rest – packet by packet, as
+    ffmpeg copies them out without decoding. Where the boxes around them lie does not count."""
+    tool = shutil.which("ffmpeg")
+    if not tool:
+        raise EditError("ffmpeg is not installed")
+    try:
+        done = subprocess.run([tool, "-v", "error", "-nostdin", "-i", str(path), "-map", "0", "-c", "copy",
+                               "-f", "streamhash", "-hash", "sha256", "-"], capture_output=True, text=True, timeout=1800)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise EditError("check failed: the film cannot be read") from exc
+    if done.returncode != 0 or not done.stdout.strip():
+        raise EditError("check failed: the film cannot be read")
+    return done.stdout
 
 
 def _struct(value) -> str:
@@ -261,7 +316,7 @@ class Editor:
         """The tags as they are in the file now; missing ones are simply not in the answer."""
         if not self.exiftool:
             raise EditError("exiftool is not installed")
-        done = self._run([self.exiftool, "-j", "-n", "-G1", "-struct", *(f"-{t}" for t in tags), str(src)])
+        done = self._run([self.exiftool, "-j", "-n", "-G1", "-struct", *_utc(src), *(f"-{t}" for t in tags), str(src)])
         if done.returncode != 0:
             raise EditError(f"cannot read metadata: {done.stderr.strip()[-200:]}")
         found = json.loads(done.stdout)[0]
@@ -293,7 +348,7 @@ class Editor:
         """source + tags -> target. The source is never touched."""
         if not self.exiftool:
             raise EditError("exiftool is not installed")
-        command = [self.exiftool, "-n", *self._arguments(tags), *extra, "-o", str(target), str(source)]
+        command = [self.exiftool, "-n", *_utc(source), *self._arguments(tags), *extra, "-o", str(target), str(source)]
         done = self._run(command)
         if "Duplicate XMP property" in done.stderr + done.stdout:
             # An earlier programme wrote one XMP entry twice. exiftool then leaves the whole XMP alone
@@ -316,6 +371,10 @@ class Editor:
     @staticmethod
     def _same_picture(before: Path, after: Path) -> None:
         """The picture data must be identical; only metadata may differ."""
+        if _is_film(before):
+            if _film_hash(before) != _film_hash(after):
+                raise EditError("check failed: the film changed")
+            return
         ext = before.suffix.lower().lstrip(".")
         if ext in JPEG or ext in HEIF_EXT:
             digest = jpeg_image_hash if ext in JPEG else heif_image_hash
@@ -397,6 +456,37 @@ class Editor:
         return want
 
     @staticmethod
+    def _film_tags_for(want: dict, present: dict) -> dict:
+        """The same as _tags_for, for a film."""
+        tags: dict = {}
+
+        def put(always: tuple[str, ...], extra: tuple[str, ...], value) -> None:
+            for tag in always + tuple(t for t in extra if t in present):
+                tags[tag] = value(tag) if callable(value) else value
+
+        if "taken" in want:
+            stamp = want["taken"].replace("-", ":").replace("T", " ")
+            # the phone's own date keeps its zone; the box date is kept in UTC and so needs ours
+            put(FILM_DATE_TAGS, FILM_DATE_EXTRA, lambda tag: stamp + (
+                _local_zone(stamp) if tag == "QuickTime:CreateDate" else _zone(present.get(tag))))
+        if "lat" in want:
+            lat, lon = want["lat"], want["lon"]
+            put(FILM_PLACE_TAGS, FILM_PLACE_EXTRA, None if lat is None else lambda tag: (
+                {"XMP-exif:GPSLatitude": lat, "XMP-exif:GPSLongitude": lon}.get(tag, f"{lat!r} {lon!r}")))
+        if "description" in want:
+            put(FILM_TEXT_TAGS, FILM_TEXT_EXTRA, want["description"] or None)
+        if "keywords" in want:
+            tags[WORD_TAGS[0]] = want["keywords"] or None
+        if "rating" in want:
+            tags["XMP-xmp:Rating"] = want["rating"] or None
+        if "creator" in want:
+            tags[FILM_CREATOR_TAGS[0]] = want["creator"] or None
+        if "albums" in want:
+            others = [str(v) for v in present.get(TREE_TAG, []) if str(v).split("|")[0] != ALBUM_ROOT]
+            tags[TREE_TAG] = others + [ALBUM_ROOT + "|" + album.replace("/", "|") for album in want["albums"]] or None
+        return tags
+
+    @staticmethod
     def _tags_for(want: dict, present: dict) -> dict:
         tags: dict = {}
 
@@ -444,10 +534,15 @@ class Editor:
     @staticmethod
     def _check_meta(temp: Path, want: dict) -> None:
         """Read the new file the way the index will and compare with what was asked for."""
-        try:
-            _, meta = read_image(temp.read_bytes())
-        except Exception as exc:
-            raise EditError(f"check failed: the new file cannot be read ({type(exc).__name__})") from exc
+        if _is_film(temp):
+            meta = read_video(temp)
+            if not meta:
+                raise EditError("check failed: the new file cannot be read")
+        else:
+            try:
+                _, meta = read_image(temp.read_bytes())
+            except Exception as exc:
+                raise EditError(f"check failed: the new file cannot be read ({type(exc).__name__})") from exc
         problems = []
         if "taken" in want and meta.get("taken") != want["taken"]:
             problems.append("date")
@@ -472,7 +567,10 @@ class Editor:
 
     def change(self, photo: dict, change: dict, user: str, batch: str | None = None) -> dict:
         """Write date, place, description, keywords, rating or who took it into the photo."""
-        if photo["kind"] != "image":
+        film = photo["kind"] == "video"
+        if film and photo["ext"] not in FILM_EXT:
+            raise EditError("this kind of film cannot be changed")
+        if photo["kind"] not in ("image", "video"):
             raise EditError("only pictures can be changed so far")
         if photo["ext"] in RAW_EXT:
             raise EditError("raw files are left as the camera wrote them")
@@ -481,8 +579,8 @@ class Editor:
             if not want:
                 return self.index.by_path(photo["path"])
             src = self._source(photo["path"])
-            present = self._read(src, META_TAGS)
-            tags = self._tags_for(want, present)
+            present = self._read(src, FILM_META_TAGS if film else META_TAGS)
+            tags = self._film_tags_for(want, present) if film else self._tags_for(want, present)
             temp = self._beside(src)
             try:
                 self._write(src, temp, tags)

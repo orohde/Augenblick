@@ -187,7 +187,17 @@ async def shoot(base: str, user: str, password: str, out: Path, lang: str = "de"
             # 17 the inbox
             await tab.js("location.hash = '#/eingang';")
             await tab.snap(out / "17-eingang.png", 3)
-            await tab.js("location.hash = '#/';")
+            # 18 the start page: what came in last, memories, a pinned album
+            await tab.js(f"""State.pins = (await api('me/prefs', {{method: 'PUT', body: JSON.stringify({{pins: [{json.dumps(names['alps'])}]}})}})).pins;
+                location.hash = '#/start';""")
+            await tab.snap(out / "18-startseite.png", 3)
+            # 19 an album full screen, with date and place shown
+            await tab.js(f"""location.hash = '#/album/' + {json.dumps(names['alps'])};
+                await new Promise((r) => setTimeout(r, 1500));
+                await openShow(() => api('sequence?' + query()));
+                if (!Show.info) $('show-info').click();""")
+            await tab.snap(out / "19-ansehen.png", 3)
+            await tab.js("closeShow(); location.hash = '#/';")
 
             # 13 on the phone
             await tab.size(430, 932, 3, True)

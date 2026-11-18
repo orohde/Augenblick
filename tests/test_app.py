@@ -195,11 +195,11 @@ def test_security_settings_and_api_key(app, admin, greta):
     assert admin.put("/api/security", json={"require_2fa_external": True}).status_code == 400     # own factor first
     assert admin.put("/api/security", json={"internal_networks": "10.0.0.0/8"}).status_code == 400  # would lock out
     assert admin.put("/api/security", json={"internal_networks": "192.168.1.0/24"}).json()["internal_networks"]
-    token = admin.post("/api/security/api-token").json()["api_token"]
+    made = admin.post("/api/security/api-keys", json={"name": "Skript"}).json()
     script = type(admin)(app, client=("192.168.1.30", 40000))
-    assert script.get("/api/areas", headers={"Authorization": f"Bearer {token}"}).status_code == 200
-    assert admin.delete("/api/security/api-token").json() == {"api_token": ""}
-    assert script.get("/api/areas", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+    assert script.get("/api/areas", headers={"Authorization": f"Bearer {made['token']}"}).status_code == 200
+    assert admin.delete(f"/api/security/api-keys/{made['id']}").json() == {"ok": True}
+    assert script.get("/api/areas", headers={"Authorization": f"Bearer {made['token']}"}).status_code == 401
 
 
 def test_jobs_overview(admin, greta):

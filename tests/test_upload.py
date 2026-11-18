@@ -91,7 +91,7 @@ def test_without_the_key_nothing(door, tmp_path, monkeypatch):
     assert stranger.put("/dav/a.jpg", content=data, headers=wrong).status_code == 401
     assert not (door.photos / "Eingang/a.jpg").exists()
     # the API key of the administrator does not fit either
-    api = door.admin.post("/api/security/api-token").json()["api_token"]
+    api = door.admin.post("/api/security/api-keys", json={"name": "Skript"}).json()["token"]
     assert stranger.put("/dav/a.jpg", content=data, headers={"Authorization": f"Bearer {api}"}).status_code == 401
     # too many wrong keys from one address: a pause, even for the right key
     monkeypatch.setattr(upload, "TRIES", 3)
