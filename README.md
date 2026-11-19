@@ -75,6 +75,8 @@ The image is built for `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple sili
 | `AUGENBLICK_INTERNAL_NETWORKS` | private ranges | what counts as the home network (also under *Settings → Security*) |
 | `VERSIONSPRUEFUNG` | on | `0` switches the daily check for new versions off for good (see below) |
 | `AUGENBLICK_TRUSTED_PROXIES` | private ranges | Which addresses may report the client address via `X-Forwarded-For`, comma-separated (IP or network, e.g. `10.10.20.50`). Best set to your reverse proxy's address |
+| `AUGENBLICK_MAX_UPLOAD_MB` | `100` | Largest request in MB (not for WebDAV); larger ones get 413 |
+| `AUGENBLICK_DAV_MAX_GB` | `16` | Largest single file uploaded over WebDAV in GB; an upload is also refused if less than 1 GB would stay free |
 
 ## New versions
 

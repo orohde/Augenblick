@@ -8,8 +8,7 @@ from conftest import PASSWORD, browser, make_jpeg
 from fastapi.testclient import TestClient
 from augenblick.app import create_app
 
-PUBLIC = {"/api/version", "/api/login", "/api/setup", "/api/logout", "/api/docs", "/api/openapi.json",
-          "/api/docs/oauth2-redirect"}
+PUBLIC = {"/api/version", "/api/login", "/api/setup", "/api/logout"}
 
 
 def test_version(anonymous):

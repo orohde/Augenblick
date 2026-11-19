@@ -34,7 +34,7 @@ MEDIA_TYPES = {
 THUMB_EDGE = 480
 PREVIEW_EDGE = 2048
 
-Image.MAX_IMAGE_PIXELS = 400_000_000
+Image.MAX_IMAGE_PIXELS = 150_000_000   # big panoramas still open; Pillow refuses above twice this
 
 
 def kind_of(ext: str) -> str | None:

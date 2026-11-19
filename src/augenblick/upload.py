@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import threading
 import time
 from datetime import datetime
@@ -186,6 +187,13 @@ def _key_of(request: Request) -> str:
     return ""
 
 
+KEEP_FREE = 1024 ** 3          # an upload never leaves less than this free on the disk
+
+
+class TooLarge(Exception):
+    pass
+
+
 def _parts(path: str) -> list[str] | None:
     """The folders and the name of a path as the app asked for it – None if it tries to get out
     or to touch what is hidden. The server has decoded the path once already; decoding it a second
@@ -210,7 +218,7 @@ def _entry(href: str, path: Path) -> str:
 
 
 def mount(app, inbox: Inbox, root: Path, readonly: bool, client_ip, wake: threading.Event, base: str = "/dav",
-          sign=None) -> None:
+          sign=None, max_bytes: int = 16 * 1024 ** 3) -> None:
     """Hang the door into the app. `sign(path, name)` writes who took a picture into the file."""
     misses: dict[str, list[float]] = {}
     settle: list[threading.Timer] = []
@@ -346,10 +354,20 @@ def mount(app, inbox: Inbox, root: Path, readonly: bool, client_ip, wake: thread
                 return Response(status_code=409)
             if "content-range" in request.headers:      # a file in pieces: taking one piece for the file would ruin it
                 return Response(status_code=400, content="uploads in pieces are not supported: send the file in one go")
+            wanted = request.headers.get("content-length")
+            size = int(wanted) if wanted and wanted.isdigit() else 0
+            if size > max_bytes:
+                return Response(status_code=413, content="file too large")
+            if shutil.disk_usage(folder).free - size < KEEP_FREE:     # never fill the disk to the brim
+                return Response(status_code=507, content="not enough free space")
             temp = path.with_name(PART + secrets.token_hex(6) + path.suffix)
             try:
+                written = 0
                 async with await anyio.open_file(temp, "wb") as out:
                     async for chunk in request.stream():
+                        written += len(chunk)
+                        if written > max_bytes:
+                            raise TooLarge
                         await out.write(chunk)
                 wanted = request.headers.get("content-length")
                 if wanted and wanted.isdigit() and int(wanted) != temp.stat().st_size:
@@ -358,6 +376,9 @@ def mount(app, inbox: Inbox, root: Path, readonly: bool, client_ip, wake: thread
                 status, landed = await anyio.to_thread.run_sync(put, path, temp, request.state.upload_key.get("creator", ""), made)
                 if made:
                     log.info("%s came with its date (header)", landed.name)
+            except TooLarge:
+                temp.unlink(missing_ok=True)
+                return Response(status_code=413, content="file too large")
             except BaseException:               # also when the phone hangs up half way: leave no half file
                 temp.unlink(missing_ok=True)
                 raise

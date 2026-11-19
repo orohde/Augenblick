@@ -47,3 +47,17 @@ def test_the_guard_forgets_but_never_endlessly():
     assert guard.begin("niemand499", True) == 0 and guard.begin("niemand499", True) == 1
     guard.end("niemand499", True)
     assert guard.begin("niemand499", True) == 0
+
+
+def test_password_asked_again_has_the_same_brake(admin):
+    from conftest import PASSWORD
+    for _ in range(5):
+        assert admin.post("/api/me/password", json={"old": "falsch-falsch", "new": "x" * 14}).status_code == 403
+    assert admin.post("/api/me/password", json={"old": PASSWORD, "new": "x" * 14}).status_code == 429
+    assert admin.post("/api/me/totp/setup", json={"password": PASSWORD}).status_code == 429
+
+
+def test_names_the_app_acts_under_are_not_for_people(admin):
+    from conftest import PASSWORD
+    for name in ("api", "upload", "API"):
+        assert admin.post("/api/users", json={"name": name, "password": PASSWORD}).status_code == 400, name

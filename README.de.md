@@ -73,6 +73,8 @@ Das Image gibt es für `linux/amd64` und `linux/arm64` (Raspberry Pi, Apple Sili
 | `AUGENBLICK_INTERNAL_NETWORKS` | private Netze | was als Heimnetz zählt (auch unter *Einstellungen → Sicherheit*) |
 | `VERSIONSPRUEFUNG` | an | `0` schaltet die tägliche Frage nach neuen Versionen dauerhaft ab (siehe unten) |
 | `AUGENBLICK_TRUSTED_PROXIES` | private Netze | Von welchen Adressen `X-Forwarded-For` geglaubt wird, durch Komma getrennt (IP oder Netz, z. B. `10.10.20.50`). Am besten die Adresse des Reverse Proxys eintragen |
+| `AUGENBLICK_MAX_UPLOAD_MB` | `100` | Größte Anfrage in MB (nicht für WebDAV); größere bekommen 413 |
+| `AUGENBLICK_DAV_MAX_GB` | `16` | Größte einzelne Datei per WebDAV in GB; ein Upload wird auch abgelehnt, wenn danach weniger als 1 GB frei bliebe |
 
 ## Neue Versionen
 

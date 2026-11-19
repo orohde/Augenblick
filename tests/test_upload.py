@@ -288,3 +288,36 @@ def test_a_path_part_never_holds_a_slash():
     assert upload._parts("a%2F..%2F..") is None                        # a name with % is no name a phone sends
     assert upload._parts("a/../b") is None
     assert upload._parts("iPhone Oliver/IMG_0001.jpg") == ["iPhone Oliver", "IMG_0001.jpg"]
+
+
+def test_the_door_takes_no_endless_file(settings, tmp_path, monkeypatch):
+    settings = dataclasses.replace(settings, readonly=False, dav_max_gb=2000 / 1024 ** 3)   # 2000 bytes
+    app = create_app(settings, background=False)
+    admin = browser(app)
+    assert admin.post("/api/setup", json={"username": "oliver", "password": PASSWORD}).status_code == 201
+    assert admin.post("/api/areas", json={"name": "Eingang"}).status_code == 201
+    admin.put("/api/upload", json={"area": "Eingang"})
+    key = admin.post("/api/upload/key").json()["key"]
+    phone = browser(app)
+    phone.headers["Authorization"] = "Basic " + base64.b64encode(f"upload:{key}".encode()).decode()
+    assert phone.put("/dav/gross.jpg", content=b"x" * 5000).status_code == 413
+
+    def chunks():                                      # no length named: counted while it comes
+        for _ in range(5):
+            yield b"x" * 1000
+    assert phone.put("/dav/gross2.jpg", content=chunks()).status_code == 413
+    assert not list((settings.photos / "Eingang").iterdir())
+    monkeypatch.setattr(upload, "KEEP_FREE", 10 ** 18)
+    assert phone.put("/dav/klein.jpg", content=b"x" * 10).status_code == 507
+
+
+def test_no_request_body_beyond_the_limit(settings):
+    settings = dataclasses.replace(settings, max_upload_mb=1)
+    client = browser(create_app(settings, background=False))
+    assert client.post("/api/login", content=b"{" + b" " * (2 * 1024 * 1024) + b"}",
+                       headers={"Content-Type": "application/json"}).status_code == 413
+
+    def chunks():
+        for _ in range(3):
+            yield b" " * (1024 * 1024)
+    assert client.post("/api/login", content=chunks(), headers={"Content-Type": "application/json"}).status_code == 413
