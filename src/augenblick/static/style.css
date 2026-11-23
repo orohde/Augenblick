@@ -47,6 +47,10 @@ body {
 .shell-search { flex: 1; max-width: 32rem; }
 .shell-search .fd-input { width: 100%; }
 .only-mobile { display: none; }
+.shell-icon { display: none; width: 1.3rem; height: 1.3rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.filter-count { margin-left: 0.35rem; min-width: 1.1rem; padding: 0 0.3rem; border-radius: 1rem; font-size: 0.7rem; font-weight: 600;
+  background: var(--sapButton_Emphasized_Background, #0070f2); color: #fff; display: inline-block; text-align: center; }
+.filter-count[hidden] { display: none; }
 
 .toolbar {
   flex: none; display: flex; align-items: center; gap: 0.75rem 1rem; flex-wrap: wrap; padding: 0.5rem 1rem;
@@ -157,6 +161,10 @@ body {
   position: absolute; left: 0.3rem; bottom: 0.3rem; padding: 0.05rem 0.4rem; border-radius: 0.6rem;
   background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 0.75rem;
 }
+.tile__fav { position: absolute; right: 0.3rem; bottom: 0.2rem; color: #fff; font-size: 0.95rem; line-height: 1;
+  text-shadow: 0 0 0.25rem rgba(0, 0, 0, 0.8); pointer-events: none; }
+.fav-btn { font-size: 1.2rem; min-width: 2.5rem; }
+.fav-btn[aria-pressed="true"] { color: #e5484d; }
 .tile--video { display: flex; align-items: center; justify-content: center; font-size: 2rem; color: var(--sapContent_LabelColor, #556b82); }
 
 .years {
@@ -431,6 +439,13 @@ a.tag:hover { outline: 1px solid var(--sapContent_FocusColor, #0070f2); }
 
 @media (max-width: 800px) {
   .only-mobile { display: inline-flex; }
+  /* the filters fold away behind one button; what stays is that button, "Auswählen" and the count */
+  #toolbar { padding: 0.4rem 0.5rem; gap: 0.5rem 0.75rem; }
+  #toolbar.is-folded > :not(#btn-filters):not(#btn-select):not(#status) { display: none; }
+  #toolbar:not(.is-folded) #btn-filters { width: 100%; justify-content: center; }
+  /* while scrolling down the bars on top move out of sight (barsFollow in app.js) */
+  .app { transition: margin-top 0.2s ease; }
+  .app.bars-up { margin-top: calc(-1 * var(--bars, 0px)); height: calc(100% + var(--bars, 0px)); }
   .tree-panel { position: fixed; z-index: 20; top: 2.75rem; bottom: 0; left: 0; width: 85% !important; max-width: 20rem;
     transform: translateX(-100%); transition: transform 0.15s; box-shadow: 0 0 1rem rgba(0,0,0,.3); }
   .tree-panel.is-open { transform: none; }
@@ -625,7 +640,14 @@ a.tree-row { color: inherit; text-decoration: none; }
 @media (max-width: 600px) {       /* the bar on top must not be wider than a phone: that would make the whole page wider */
   .fd-shellbar { padding: 0 0.5rem; gap: 0.4rem; }
   .fd-shellbar .fd-shellbar__title { display: none; }
-  .shell-search { min-width: 0; }
+  .shell-search { min-width: 0; max-width: none; }
+  .shell-logo { margin-right: 0; }
+  .not-mobile { display: none !important; }
+  /* "Eingang" and "Abmelden" as signs only: the search needs the room */
+  .fd-shellbar .shell-label { display: none; }
+  .fd-shellbar .shell-icon { display: block; }
+  .fd-shellbar__group--actions { gap: 0; }
+  .fd-shellbar__group--actions .fd-shellbar__button { padding: 0 0.45rem; min-width: 2.25rem; justify-content: center; }
   .start-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
   .start-cards .mem-card__title { font-size: 0.9rem; }
 }

@@ -1033,5 +1033,10 @@ I18N.en = {
   "Version": "Version",
   "Wenn das Telefon verloren ist. Das Konto richtet ihn danach neu ein.": "When the phone is lost. The account sets it up again afterwards.",
   "Zweiten Faktor zurücksetzen": "Reset second factor",
-  "Über": "About"
+  "Über": "About",
+  "Als Favorit markieren": "Mark as favourite",
+  "Als Favorit markieren (Taste L) – schreibt fünf Sterne ins Bild": "Mark as favourite (key L) – writes five stars into the picture",
+  "Favorit": "Favourite",
+  "Filter": "Filters",
+  "Kein Favorit mehr": "No longer a favourite"
 };

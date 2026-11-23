@@ -855,6 +855,7 @@ async function reload(keepScroll = false) {
   if ((State.memList || State.memory) && State.memories === null) await loadMemories();     // opened by its address
   if (State.memList) { ++State.generation; renderMemories(); return; }
   showMemoryHead();
+  markFilters();
   const generation = ++State.generation;
   const months = await api('timeline?' + query());
   if (generation !== State.generation) return;
@@ -923,11 +924,13 @@ function tile(item) {
     const still = el('img', { src: `api/photos/${item.key}/thumb`, loading: 'lazy', decoding: 'async', alt: '', draggable: 'false' });
     still.addEventListener('error', () => still.replaceWith('▶'));
     return el('button', { class: 'tile tile--video' + (State.selected.has(item.key) ? ' is-selected' : ''), type: 'button', draggable: 'true', dataset: { key: item.key }, style: shape(item), title: label, 'aria-label': t('Video vom ') + label },
-      still, el('span', { class: 'tile__badge' }, item.s ? '▶ ' + runtime(item.s) : t('Video')));
+      still, el('span', { class: 'tile__badge' }, item.s ? '▶ ' + runtime(item.s) : t('Video')),
+      item.f ? el('span', { class: 'tile__fav', 'aria-label': t('Favorit') }, '♥') : null);
   }
   return el('button', { class: 'tile' + (State.selected.has(item.key) ? ' is-selected' : ''), type: 'button', draggable: 'true', dataset: { key: item.key },
     style: shape(item), title: label, 'aria-label': t('Foto vom {0}', [label]), 'aria-pressed': State.selecting ? String(State.selected.has(item.key)) : null },
-    el('img', { src: thumbUrl(item), loading: 'lazy', decoding: 'async', alt: '', draggable: 'false' }));
+    el('img', { src: thumbUrl(item), loading: 'lazy', decoding: 'async', alt: '', draggable: 'false' }),
+    item.f ? el('span', { class: 'tile__fav', 'aria-label': t('Favorit') }, '♥') : null);
 }
 
 const runtime = (seconds) => {
@@ -1142,7 +1145,56 @@ let yearTick = 0;
 $('grid-panel').addEventListener('scroll', () => {
   cancelAnimationFrame(yearTick);
   yearTick = requestAnimationFrame(markYear);
+  barsFollow();
 }, { passive: true });
+
+// ----------------------------------------------------------------- small screens
+// On a phone the bars on top would take half the screen: the filters fold away behind one button, and
+// the bar with the search moves up out of sight while one scrolls down and comes back on the way up.
+const PHONE = window.matchMedia('(max-width: 800px)');
+const Bars = { top: 0 };
+
+function barsUp(up) {
+  const app = $('view-app');
+  if (up && PHONE.matches) {
+    const height = document.querySelector('.fd-shellbar').offsetHeight + ($('view-library').hidden ? 0 : $('toolbar').offsetHeight);
+    app.style.setProperty('--bars', height + 'px');
+  }
+  app.classList.toggle('bars-up', Boolean(up) && PHONE.matches);
+}
+
+function barsFollow() {
+  const top = $('grid-panel').scrollTop;
+  const moved = top - Bars.top;
+  if (Math.abs(moved) < 12) return;
+  Bars.top = top;
+  if (!PHONE.matches || $('tree-panel').classList.contains('is-open') || document.activeElement === $('search')) return barsUp(false);
+  barsUp(moved > 0 && top > 120);
+}
+PHONE.addEventListener('change', () => barsUp(false));
+$('btn-tree').addEventListener('click', () => barsUp(false));
+$('search').addEventListener('focus', () => barsUp(false));
+
+function foldFilters(folded) {
+  $('toolbar').classList.toggle('is-folded', folded);
+  $('btn-filters').setAttribute('aria-expanded', String(!folded));
+}
+$('btn-filters').addEventListener('click', () => foldFilters(!$('toolbar').classList.contains('is-folded')));
+
+// how many filters narrow what is shown – on the folded button, so a filter left on is not forgotten
+function markFilters() {
+  const areas = State.areas.filter((area) => !area.inbox);
+  const count = [!State.inbox && areas.length && areas.some((area) => !State.active.has(area.name)), !State.recursive, State.camera, State.creator,
+    State.place, State.kind, State.noPlace, State.noDate, State.misfit].filter(Boolean).length;
+  $('filter-count').hidden = !count;
+  $('filter-count').textContent = count;
+}
+
+// the long wording does not fit next to the buttons on a phone
+const SEARCH_HINT = $('search').placeholder;
+const searchHint = () => { $('search').placeholder = window.matchMedia('(max-width: 600px)').matches ? t('Suchen') : SEARCH_HINT; };
+window.matchMedia('(max-width: 600px)').addEventListener('change', searchHint);
+searchHint();
 
 // ----------------------------------------------------------------- viewer
 
@@ -1212,6 +1264,7 @@ function showPhoto(photo) {
 
   $('v-live').hidden = !(photo.film && !photo.error);
   $('v-live').textContent = t('▶ Live');
+  showHeart(photo);
   if (photo.kind === 'video') {
     video.src = `api/photos/${key}/file`;
     video.hidden = false;
@@ -1499,6 +1552,33 @@ function closeViewer() {
   if (State.dirty) { State.dirty = false; loadTree(); reload(true); }
 }
 
+// A favourite is a picture with four or five stars (the server's FAVOURITE): the heart gives five
+// and takes them all away again – in the file, where other programs see it too.
+const isFavourite = (photo) => (photo.rating || 0) >= 4;
+
+function showHeart(photo) {
+  const on = isFavourite(photo);
+  $('v-fav').hidden = !photo.can_change;
+  $('v-fav').disabled = false;
+  $('v-fav').textContent = on ? '♥' : '♡';
+  $('v-fav').setAttribute('aria-pressed', String(on));
+  $('v-fav').setAttribute('aria-label', on ? t('Kein Favorit mehr') : t('Als Favorit markieren'));
+}
+
+async function toggleFavourite() {
+  const photo = Viewer.photo;
+  if (!photo || !photo.can_change || $('v-fav').disabled) return;
+  $('v-fav').disabled = true;
+  try {
+    const updated = await api(`photos/${photo.key}`, { method: 'PATCH', body: JSON.stringify({ rating: isFavourite(photo) ? 0 : 5 }) });
+    adopt(updated, photo.key);
+    if (Viewer.list) Viewer.list = Viewer.list.map((i) => (i.key === photo.key ? { ...i, key: updated.key, f: isFavourite(updated) ? 1 : 0 } : i));
+    if (Viewer.key === photo.key) { Viewer.key = updated.key; showPhoto(updated); }
+    loadAuto();
+  } catch (err) { message($('v-msg'), explain(err.message), true); $('v-fav').disabled = false; }
+}
+$('v-fav').addEventListener('click', toggleFavourite);
+
 $('v-img').addEventListener('error', () => { $('v-img').hidden = true; $('v-broken').hidden = false; });
 $('v-prev').addEventListener('click', () => step(-1));
 $('v-next').addEventListener('click', () => step(1));
@@ -1511,6 +1591,7 @@ document.addEventListener('keydown', (event) => {
   else if (event.key === 'ArrowLeft') step(-1);
   else if (event.key === 'ArrowRight') step(1);
   else if (event.key === 'Delete' && Viewer.photo && Viewer.photo.can_delete) deleteShown();
+  else if ((event.key === 'l' || event.key === 'L') && !event.metaKey && !event.ctrlKey) toggleFavourite();
   else if ((event.key === 'f' || event.key === 'F') && !event.metaKey && !event.ctrlKey && !$('v-show').hidden) showFromViewer();
 });
 
@@ -2499,12 +2580,15 @@ function adopt(photo, oldKey) {
   State.dirty = true;
   for (const items of State.items.values()) {
     const item = items.find((i) => i.key === oldKey);
-    if (item) { item.key = photo.key; item.o = photo.orientation || 1; }
+    if (item) { item.key = photo.key; item.o = photo.orientation || 1; item.f = isFavourite(photo) ? 1 : 0; }
   }
   if (State.selected.delete(oldKey)) State.selected.add(photo.key);
   const button = document.querySelector(`.tile[data-key="${oldKey}"]`);
   if (button) {
     button.dataset.key = photo.key;
+    const heart = button.querySelector('.tile__fav');
+    if (isFavourite(photo) && !heart) button.append(el('span', { class: 'tile__fav', 'aria-label': t('Favorit') }, '♥'));
+    else if (!isFavourite(photo) && heart) heart.remove();
     const img = button.querySelector('img');
     if (img) img.src = thumbUrl({ key: photo.key, o: photo.orientation });
   }

@@ -1033,5 +1033,10 @@ I18N.fr = {
   "Version": "Version",
   "Wenn das Telefon verloren ist. Das Konto richtet ihn danach neu ein.": "Si le téléphone est perdu. Le compte le configure ensuite à nouveau.",
   "Zweiten Faktor zurücksetzen": "Réinitialiser le second facteur",
-  "Über": "À propos"
+  "Über": "À propos",
+  "Als Favorit markieren": "Marquer comme favori",
+  "Als Favorit markieren (Taste L) – schreibt fünf Sterne ins Bild": "Marquer comme favori (touche L) – écrit cinq étoiles dans l’image",
+  "Favorit": "Favori",
+  "Filter": "Filtres",
+  "Kein Favorit mehr": "Retirer des favoris"
 };

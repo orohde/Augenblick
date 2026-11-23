@@ -75,6 +75,11 @@ SHOWN = ("NOT (kind = 'video' AND live != '' AND EXISTS (SELECT 1 FROM photos st
          "AND NOT EXISTS (SELECT 1 FROM photos made WHERE made.source = photos.hash AND made.folder = photos.folder)")
 
 
+# A favourite is a picture rated with four or five stars – kept in the file (XMP/EXIF rating), as other
+# programs read it too. The heart in the viewer sets five stars and takes them away again.
+FAVOURITE = 4
+ALWAYS = {"favoriten"}      # shown even while empty: else nobody finds where the hearts go
+
 # Albums nobody has to keep: what belongs in them follows from the pictures themselves.
 AUTO = {
     "videos": ("Videos", "kind = 'video'"),
@@ -83,7 +88,7 @@ AUTO = {
     "panoramen": ("Panoramen", "kind = 'image' AND (make != '' OR model != '') AND width > 0 AND height > 0 "
                                "AND (width >= 2 * height OR height >= 2 * width) "
                                "AND max(width, height) >= 1500"),      # a small strip is a cut-out, not a wide view
-    "favoriten": ("Favoriten", "rating >= 4"),
+    "favoriten": ("Favoriten", f"rating >= {FAVOURITE}"),
     "raw": ("RAW", "ext = 'dng'"),
     "heute": ("An diesem Tag", "substr(taken, 6, 5) = ? AND substr(taken, 1, 4) < ?"),
     "neu": ("Neu hinzugekommen", "hash IN (SELECT digest FROM seen WHERE ts >= ?)"),
@@ -124,6 +129,7 @@ def _short(r) -> dict:
     """A picture as the overview and the slide show want it: what it is, how it is shaped, and a line about it."""
     return {"key": r["key"], "kind": r["kind"], "taken": r["taken"], "month": r["month"], "w": r["width"],
             "h": r["height"], "o": r["orientation"] or 1, **({"s": r["seconds"]} if r["kind"] == "video" else {}),
+            **({"f": 1} if (r["rating"] or 0) >= FAVOURITE else {}),
             "city": r["city"] or "", "country": r["country"] or "", "desc": r["description"] or ""}
 
 
@@ -528,16 +534,17 @@ class Index:
     def month(self, areas: list[str], month: str, **filters) -> list[dict]:
         where, params = self._where(areas, **filters)
         rows = self._all(
-            f"SELECT key, kind, taken, width, height, orientation, seconds FROM photos WHERE {where} AND month = ? "
+            f"SELECT key, kind, taken, width, height, orientation, seconds, rating FROM photos WHERE {where} AND month = ? "
             "ORDER BY taken DESC, id", params + [month])
         return [{"key": r["key"], "kind": r["kind"], "taken": r["taken"], "w": r["width"], "h": r["height"],
-                 "o": r["orientation"] or 1, **({"s": r["seconds"]} if r["kind"] == "video" else {})} for r in rows]
+                 "o": r["orientation"] or 1, **({"s": r["seconds"]} if r["kind"] == "video" else {}),
+                 **({"f": 1} if (r["rating"] or 0) >= FAVOURITE else {})} for r in rows]
 
     def recent(self, areas: list[str], limit: int = 24) -> list[dict]:
         """The pictures that came in last, newest first – by when they came, not when they were taken."""
         where, params = self._where(areas)
         rows = self._all(
-            f"SELECT key, kind, taken, month, width, height, orientation, seconds, city, country, description, ts "
+            f"SELECT key, kind, taken, month, width, height, orientation, seconds, rating, city, country, description, ts "
             f"FROM photos JOIN seen ON seen.digest = photos.hash WHERE {where} "
             "ORDER BY ts DESC, taken DESC, photos.id LIMIT ?", params + [limit])
         return [dict(_short(r), added=r["ts"]) for r in rows]
@@ -546,7 +553,7 @@ class Index:
         """Everything a choice holds, oldest first – the order in which it is looked at, one after the other."""
         where, params = self._where(areas, **filters)
         rows = self._all(
-            f"SELECT key, kind, taken, month, width, height, orientation, seconds, city, country, description "
+            f"SELECT key, kind, taken, month, width, height, orientation, seconds, rating, city, country, description "
             f"FROM photos WHERE {where} ORDER BY taken, id LIMIT ?", params + [limit])
         return [_short(r) for r in rows]
 
@@ -652,7 +659,7 @@ class Index:
         found = []
         for name, (title, _) in AUTO.items():
             count = self.count_where(areas, auto=name)
-            if count:
+            if count or name in ALWAYS:
                 found.append({"id": name, "name": title, "count": count})
         return found
 

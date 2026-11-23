@@ -59,7 +59,8 @@ def paths(client, auto):
 def test_albums_that_fill_themselves(rw):
     found = {a["id"]: (a["name"], a["count"]) for a in rw.get("/api/auto").json()}
     assert found == {"videos": ("Videos", 2), "live": ("Live Photos", 1), "panoramen": ("Panoramen", 1),
-                     "raw": ("RAW", 1), "heute": ("An diesem Tag", 1),        # no favourites yet: not listed
+                     "favoriten": ("Favoriten", 0),        # listed while empty, so the hearts have somewhere to go
+                     "raw": ("RAW", 1), "heute": ("An diesem Tag", 1),
                      "neu": ("Neu hinzugekommen", 2)}      # the two without a date of their own: as old as their file, today
     assert paths(rw, "videos") == ["Familie/2024/film.mov", "Familie/Weit/film.mov"]    # the film of the Live Photo is not one
     assert paths(rw, "live") == ["Familie/Neu/IMG_1.jpg"]
@@ -70,7 +71,12 @@ def test_albums_that_fill_themselves(rw):
     key = rw.index.by_path("Familie/Weit/pano.jpg")["key"]
     assert rw.patch(f"/api/photos/{key}", json={"rating": 5}).status_code == 200
     assert paths(rw, "favoriten") == ["Familie/Weit/pano.jpg"]
-    assert rw.get("/api/auto", params={"areas": "Greta"}).json() == []
+    month = rw.index.by_path("Familie/Weit/pano.jpg")["month"]
+    shown = {item["key"]: item.get("f") for item in rw.get("/api/photos", params={"month": month}).json()}
+    assert shown[rw.index.by_path("Familie/Weit/pano.jpg")["key"]] == 1                  # the overview draws the heart
+    assert rw.patch(f"/api/photos/{rw.index.by_path('Familie/Weit/pano.jpg')['key']}", json={"rating": 0}).status_code == 200
+    assert paths(rw, "favoriten") == []
+    assert [a["id"] for a in rw.get("/api/auto", params={"areas": "Greta"}).json()] == ["favoriten"]
 
 
 def test_raw_files_are_shown_and_left_alone(rw):

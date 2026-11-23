@@ -1033,5 +1033,10 @@ I18N.it = {
   "Version": "Versione",
   "Wenn das Telefon verloren ist. Das Konto richtet ihn danach neu ein.": "Se il telefono è perso. L’account lo configura poi di nuovo.",
   "Zweiten Faktor zurücksetzen": "Reimposta il secondo fattore",
-  "Über": "Informazioni"
+  "Über": "Informazioni",
+  "Als Favorit markieren": "Segna come preferito",
+  "Als Favorit markieren (Taste L) – schreibt fünf Sterne ins Bild": "Segna come preferito (tasto L) – scrive cinque stelle nell’immagine",
+  "Favorit": "Preferito",
+  "Filter": "Filtri",
+  "Kein Favorit mehr": "Togli dai preferiti"
 };

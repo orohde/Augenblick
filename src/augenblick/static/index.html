@@ -63,16 +63,17 @@
       </div>
       <div class="fd-shellbar__group fd-shellbar__group--actions">
         <button id="btn-update" class="fd-button fd-shellbar__button upd-btn" type="button" hidden></button>
-        <a id="btn-inbox" class="fd-button fd-shellbar__button" href="#/eingang" title="Neu hochgeladene Bilder, noch nicht einsortiert" hidden>Eingang<span id="inbox-badge" class="inbox-badge" hidden></span></a>
-        <button id="btn-theme" class="fd-button fd-shellbar__button" type="button" aria-label="Hell oder dunkel">&#9680;</button>
+        <a id="btn-inbox" class="fd-button fd-shellbar__button" href="#/eingang" title="Neu hochgeladene Bilder, noch nicht einsortiert" hidden><span class="shell-label">Eingang</span><svg class="shell-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 13h4.5l1.5 2.5h5l1.5-2.5h4.5M3.5 13l2.8-7.5h11.4l2.8 7.5v6H3.5z"/></svg><span id="inbox-badge" class="inbox-badge" hidden></span></a>
+        <button id="btn-theme" class="fd-button fd-shellbar__button not-mobile" type="button" aria-label="Hell oder dunkel">&#9680;</button>
         <a id="btn-settings" class="fd-button fd-shellbar__button" href="#/einstellungen/konto" aria-label="Einstellungen" title="Einstellungen">&#9881;</a>
-        <button id="btn-logout" class="fd-button fd-shellbar__button" type="button">Abmelden</button>
+        <button id="btn-logout" class="fd-button fd-shellbar__button" type="button" title="Abmelden"><span class="shell-label">Abmelden</span><svg class="shell-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4.5H6.5v15H14M10 12h10m-3.5-3.5L20 12l-3.5 3.5"/></svg></button>
       </div>
     </header>
 
     <!-- ---------- library ---------- -->
     <div id="view-library" class="library">
-      <div class="toolbar">
+      <div id="toolbar" class="toolbar is-folded">
+        <button id="btn-filters" class="fd-button fd-button--compact only-mobile" type="button" aria-expanded="false" aria-controls="toolbar">Filter<span id="filter-count" class="filter-count" hidden></span></button>
         <div id="area-chips" class="chips" role="group" aria-label="Bereiche"></div>
         <label class="toolbar__check"><input type="checkbox" id="chk-recursive" checked><span>mit Unterordnern</span></label>
         <select id="sel-camera" class="fd-input toolbar__select" aria-label="Kamera"><option value="">Alle Kameras</option></select>
@@ -986,6 +987,7 @@
       <div class="viewer__bar">
         <button id="v-close" class="fd-button fd-button--transparent" type="button" aria-label="Schließen">&#10005;</button>
         <button id="v-show" class="fd-button" type="button" title="Ab diesem Bild bildschirmfüllend ansehen (Taste F)" hidden>▶ Ansehen</button>
+        <button id="v-fav" class="fd-button fav-btn" type="button" aria-pressed="false" title="Als Favorit markieren (Taste L) – schreibt fünf Sterne ins Bild" hidden>&#9825;</button>
         <a id="v-download" class="fd-button" href="#">Original laden</a>
         <button id="v-live" class="fd-button" type="button" title="Den kurzen Film zu diesem Foto abspielen" hidden>&#9654; Live</button>
       </div>

@@ -143,14 +143,14 @@ async def shoot(base: str, user: str, password: str, out: Path, lang: str = "de"
                 treeMenu(State.tree.find((n) => n.path === shots), box.left + 120, box.top + 14);""")
             await tab.snap(out / "07-ordner.png", 1.5)
             await tab.js("$('tree-menu').hidden = true;")
-            # 8 users and areas
-            await tab.js("location.hash = '#/einstellungen/benutzer';")
-            await tab.snap(out / "08-bereiche.png", 2.5)
+            # 8 where the pictures lie: the bin and the areas
+            await tab.js("if (!$('viewer').hidden) closeViewer(); location.hash = '#/einstellungen/ablage';")     # a viewer left open would cover the settings
+            await tab.snap(out / "08-ablage.png", 2.5)
             # 9 the door for the phone
-            await tab.js("""location.hash = '#/einstellungen/api';
+            await tab.js("""location.hash = '#/einstellungen/verbindungen';
                 await new Promise((r) => setTimeout(r, 1500));
                 $('up-url').textContent = 'https://fotos.example.org/dav/';       // not the address of this test machine
-                $('up-area').closest('.card').scrollIntoView({block: 'center'});""")
+                $('up-area').closest('.set-sub').scrollIntoView({block: 'start'});""")
             await tab.snap(out / "09-upload.png", 1.5)
             # 10 what was changed, to be taken back
             await tab.js("location.hash = '#/einstellungen/aenderungen';")
