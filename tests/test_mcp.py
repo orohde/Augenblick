@@ -291,3 +291,24 @@ def test_a_read_only_installation_offers_no_writing(settings):
     client.key = {"Authorization": "Bearer " + client.post("/api/security/api-keys", json={"name": "Claude"}).json()["token"]}
     names = {t["name"] for t in rpc(client, "tools/list").json()["result"]["tools"]}
     assert "search_photos" in names and "update_photos" not in names
+
+
+def test_a_png_becomes_a_jpeg_and_comes_back(rw):
+    path = rw.app.state.editor.root / "Familie/2024/schirm.png"
+    Image.new("RGB", (40, 30), (20, 120, 220)).save(path)
+    rw.app.state.index.scan()
+    _, [found] = call(rw, "search_photos", query="schirm")
+    key = found["photos"][0]["key"]
+    error, [done] = call(rw, "convert_to_jpeg", keys=[key])
+    assert not error and done[0]["ok"] is True and done[0]["path"] == "Familie/2024/schirm.jpg"
+    assert not path.exists() and (path.parent / "schirm.jpg").exists()
+    _, [trash] = call(rw, "list_trash")
+    assert [e["name"] for e in trash["entries"]] == ["schirm.png"]
+    _, [journal] = call(rw, "list_journal")
+    entry = (journal["entries"] if isinstance(journal, dict) else journal)[0]
+    assert call(rw, "undo_change", entry=entry["id"])[0] is False
+    assert path.exists() and not (path.parent / "schirm.jpg").exists()
+    by_name = {t["name"]: t["annotations"] for t in rpc(rw, "tools/list").json()["result"]["tools"]}
+    assert by_name["convert_to_jpeg"]["destructiveHint"] is True
+    error, [text] = call(rw, "convert_to_jpeg", headers=rw.reader, keys=[key])
+    assert error and "only read" in text

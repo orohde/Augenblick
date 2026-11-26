@@ -230,6 +230,39 @@ def test_folders_are_made_shown_and_filled(rw):
     assert rw.delete("/api/folders", params={"path": "Bildschirmfotos"}).status_code == 400      # an area is no folder
 
 
+def test_a_folder_moves_with_its_photos(rw):
+    rw.post("/api/areas", json={"name": "Bildschirmfotos"})
+    rw.post("/api/folders", json={"path": "Bildschirmfotos/Arbeit/2026"})
+    keys = sorted(keys_in(rw, "Familie"))[:2]
+    rw.post("/api/move", json={"keys": keys, "folder": "Bildschirmfotos/Arbeit/2026"})
+    first = rw.get(f"/api/photos/{keys[0]}").json()["path"]
+    rw.app.state.proposals.put(first, {"description": "vorgeschlagen"})
+    # rename within the area
+    done = rw.post("/api/folders/move", json={"path": "Bildschirmfotos/Arbeit", "to": "Bildschirmfotos/Büro"})
+    assert done.status_code == 200 and done.json() == {"path": "Bildschirmfotos/Büro", "moved": 2}
+    assert not (rw.photos / "Bildschirmfotos/Arbeit").exists()
+    for key in keys:
+        photo = rw.get(f"/api/photos/{key}").json()
+        assert photo["folder"] == "Bildschirmfotos/Büro/2026" and (rw.photos / photo["path"]).is_file()
+    assert rw.app.state.proposals.get(first.replace("/Arbeit/", "/Büro/"))["description"] == "vorgeschlagen"
+    tree = {n["path"]: n for n in rw.get("/api/tree").json()}
+    assert tree["Bildschirmfotos/Büro/2026"]["count"] == 2 and "Bildschirmfotos/Arbeit" not in tree
+    # into another area, a level deeper
+    done = rw.post("/api/folders/move", json={"path": "Bildschirmfotos/Büro", "to": "Familie/Alt/Büro"}).json()
+    assert done["moved"] == 2 and rw.get(f"/api/photos/{keys[0]}").json()["area"] == "Familie"
+    # a scan finds nothing new: the index followed the files
+    assert rw.app.state.index.scan().get("added", 0) == 0
+    # refused
+    move = lambda a, b: rw.post("/api/folders/move", json={"path": a, "to": b}).status_code
+    rw.post("/api/folders", json={"path": "Familie/Ziel"})
+    assert move("Familie/Alt", "Familie/Ziel") == 409                 # exists
+    assert move("Familie/Alt", "Familie/Alt/Innen") == 400            # into itself
+    assert move("Familie/Alt", "Familie/Alt") == 409                  # nothing to do
+    assert move("Familie/Fehlt", "Familie/Woanders") == 404
+    assert move("Familie", "Bildschirmfotos/Familie") == 400          # an area is no folder
+    assert move("Familie/Alt", "Nirgends/Alt") == 403
+
+
 def test_a_rule_decides_inside_its_folders(rw):
     rw.put("/api/sorting", json=RULE)
     rw.post("/api/areas", json={"name": "Eingang"})

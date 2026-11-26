@@ -195,6 +195,7 @@ async function start() {
   $('view-app').hidden = false;
   document.querySelectorAll('.admin-only').forEach((node) => { node.hidden = !State.me.is_admin; });
   $('btn-select').hidden = !State.me.write.length;
+  $('tree-newfolder').hidden = !State.me.write.length;
   $('misfit-box').hidden = $('sel-sort').hidden = !State.me.sorting;
   if (!State.me.sorting) { State.misfit = false; $('chk-misfit').checked = false; }
   State.areas = await api('areas');
@@ -204,7 +205,9 @@ async function start() {
   if (!State.active.size) State.active = new Set(names);
   $('chk-recursive').checked = State.recursive;
   if (!location.hash || location.hash === '#') history.replaceState(null, '', '#/start');      // '#/' stays the timeline
-  try { State.pins = (await api('me/prefs')).pins || []; } catch { State.pins = []; }
+  try { const mine = await api('me/prefs'); State.pins = mine.pins || []; State.quiet = new Set(mine.quiet || []); }
+  catch { State.pins = []; }
+  renderAsks();
   route();
   renderChips();
   applyView();
@@ -586,7 +589,7 @@ function treeRow(node, hasChildren) {
     renderTree();
   };
   const mine = node.path && State.me.write.includes(node.path.split('/')[0]);
-  return el('div', {
+  const row = el('div', {
     class: 'tree-row' + (State.folder === node.path ? ' is-selected' : ''), role: 'treeitem',
     style: `--depth:${node.path ? node.depth : 0}`, dataset: { path: node.path },
     oncontextmenu: (event) => { event.preventDefault(); treeMenu(node, event.clientX, event.clientY); },
@@ -602,6 +605,27 @@ function treeRow(node, hasChildren) {
   el('span', { class: 'tree-caret' + (open ? ' is-open' : '') + (hasChildren ? '' : ' is-leaf'), onclick: hasChildren ? toggle : null }, '›'),
   el('span', { class: 'tree-name', title: node.name }, node.name),
   el('span', { class: 'tree-count' }, number(node.total)));
+  longPress(row, (x, y) => treeMenu(node, x, y));
+  return row;
+}
+
+// touch: holding a finger on an element opens what a right click would (iPad, iPhone)
+function longPress(element, fire) {
+  let timer = null; let start = null; let fired = false;
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  element.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse') return;
+    fired = false;
+    start = [event.clientX, event.clientY];
+    timer = setTimeout(() => { timer = null; fired = true; fire(start[0], start[1]); }, 550);
+  });
+  element.addEventListener('pointermove', (event) => {
+    if (timer && Math.hypot(event.clientX - start[0], event.clientY - start[1]) > 10) cancel();
+  });
+  element.addEventListener('pointerup', cancel);
+  element.addEventListener('pointercancel', cancel);
+  // the finger lifting after a long press is no click on the folder
+  element.addEventListener('click', (event) => { if (fired) { fired = false; event.stopImmediatePropagation(); event.preventDefault(); } }, true);
 }
 
 // Right-click on a folder: make one inside it, put the chosen photos there, remove an empty one.
@@ -637,6 +661,8 @@ function treeMenu(node, x, y) {
     mine ? '-' : null,
     mine ? [t('Neuer Unterordner …'), () => newFolder(node.path)] : null,
     mine ? [chosenText(n, t('hierher verschieben')), () => moveSelected(node.path), n > 0] : null,
+    mine && node.depth > 0 ? [t('Umbenennen …'), () => renameFolder(node.path)] : null,
+    mine && node.depth > 0 ? [t('Verschieben …'), () => relocateFolder(node.path)] : null,
     mine && node.depth > 0 ? [t('Ordner als Album merken …'), () => folderToAlbum(node.path), node.total > 0] : null,
     mine && node.depth > 0 ? [t('Leeren Ordner löschen'), () => dropFolder(node.path), node.total === 0] : null,
   ]);
@@ -658,6 +684,7 @@ function tileMenu(button, x, y) {
   showMenu(x, y, [
     [t('Öffnen'), () => openViewer(key, button.closest('.month').dataset.month)],
     [t('Original laden'), () => { el('a', { href: `api/photos/${key}/file?download=true`, download: '' }).click(); }],
+    [t('Teilen …') + many, () => openShare(State.selected.has(key) ? [...State.selected] : [key])],
     may ? '-' : null,
     may ? [State.selected.has(key) ? t('Abwählen') : t('Auswählen'), () => {
       if (!State.selecting) setSelecting(true);
@@ -667,6 +694,7 @@ function tileMenu(button, x, y) {
     may ? [t('Ändern …') + many, act(() => $('sel-edit').click())] : null,
     may ? [t('Nach links drehen') + many, act(() => turnSelected(270))] : null,
     may ? [t('Nach rechts drehen') + many, act(() => turnSelected(90))] : null,
+    may ? [t('In JPEG umwandeln') + many, act(() => jpegSelected())] : null,
     may && State.me.sorting ? [t('Einsortieren') + many, act(() => $('sel-sort').click())] : null,
     may ? '-' : null,
     ...(may ? State.areas.filter((a) => State.me.write.includes(a.name)).slice(0, 8)
@@ -675,6 +703,11 @@ function tileMenu(button, x, y) {
     may ? [t('In den Papierkorb') + many, act(() => $('sel-delete').click())] : null,
   ]);
 }
+$('tree-newfolder').addEventListener('click', () => {
+  const area = (State.folder || '').split('/')[0];
+  const parent = State.me.write.includes(area) ? State.folder : State.me.write[0];
+  if (parent) newFolder(parent);
+});
 $('grid').addEventListener('contextmenu', (event) => {
   const button = event.target.closest('.tile');
   if (!button) return;
@@ -694,13 +727,43 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape') $(
 window.addEventListener('blur', () => { $('tree-menu').hidden = true; });
 
 async function newFolder(parent) {
-  const name = (window.prompt(`Neuer Unterordner in ${parent}:`) || '').trim();
+  const name = (window.prompt(t('Neuer Unterordner in {0}:', [parent])) || '').trim();
   if (!name) return;
   try {
     const made = await api('folders', { method: 'POST', body: JSON.stringify({ path: `${parent}/${name}` }) });
     const parts = made.path.split('/');
     for (let i = 1; i < parts.length; i++) State.open.add(parts.slice(0, i).join('/'));     // show it at once
     store.set('open', [...State.open]);
+    await loadTree();
+  } catch (err) { window.alert(explain(err.message)); }
+}
+
+// A folder gets another name, or another place – everything in it goes along, the photos keep their keys.
+async function renameFolder(path) {
+  const at = path.lastIndexOf('/');
+  const name = (window.prompt(t('Neuer Name für {0}:', [path]), path.slice(at + 1)) || '').trim().replace(/^\/+|\/+$/g, '');
+  if (name) await shiftFolder(path, path.slice(0, at) + '/' + name);
+}
+
+async function relocateFolder(path) {
+  const to = (window.prompt(t('Neuer Ort für {0}, mit dem Bereich vorne (z. B. Familie/Reisen/2026). Alles darin zieht mit:', [path]), path) || '')
+    .trim().replace(/^\/+|\/+$/g, '');
+  if (to) await shiftFolder(path, to);
+}
+
+async function shiftFolder(path, to) {
+  if (to === path) return;
+  try {
+    const done = await api('folders/move', { method: 'POST', body: JSON.stringify({ path, to }) });
+    const swap = (p) => (p === path || p.startsWith(path + '/') ? done.path + p.slice(path.length) : p);
+    State.open = new Set([...State.open].map(swap));
+    const parts = done.path.split('/');
+    for (let i = 1; i < parts.length; i++) State.open.add(parts.slice(0, i).join('/'));     // show it at once
+    store.set('open', [...State.open]);
+    State.areas = await api('areas');
+    if (State.folder === path || State.folder.startsWith(path + '/')) {
+      location.hash = '#/ordner/' + swap(State.folder).split('/').map(encodeURIComponent).join('/');
+    }
     await loadTree();
   } catch (err) { window.alert(explain(err.message)); }
 }
@@ -720,7 +783,7 @@ const dragging = () => dragged;
 async function moveSelected(folder) {
   const n = State.selected.size;
   if (!n || !folder) return;
-  if (!window.confirm(n === 1 ? t('Das Bild nach {0} verschieben?', [folder]) : t('{0} Bilder nach {1} verschieben?', [number(n), folder]))) return;
+  if (!await ask('move', n === 1 ? t('Das Bild nach {0} verschieben?', [folder]) : t('{0} Bilder nach {1} verschieben?', [number(n), folder]))) return;
   if (!State.selecting) setSelecting(true);
   await runMany('move', { folder }, (text, isBad) => message($('sel-msg'), text, isBad), t('nach {0} verschoben', [folder]));
   State.areas = await api('areas');
@@ -1257,6 +1320,7 @@ function showPhoto(photo) {
   $('v-ai-box').hidden = !(State.ai.enabled && photo.can_write && photo.kind === 'image' && !photo.error && !State.ai.excluded_areas.includes(photo.area));
   showTake(photo);
   $('v-left').hidden = $('v-right').hidden = !photo.can_turn;
+  $('v-jpeg').hidden = !photo.can_jpeg;
   $('v-form').hidden = true;
   $('v-facts').hidden = false;
   Viewer.faces = [];
@@ -1496,7 +1560,7 @@ $('v-dev').addEventListener('submit', async (event) => {
 });
 
 $('d-discard').addEventListener('click', async () => {
-  if (!window.confirm(t('Die bearbeitete Fassung in den Papierkorb legen und wieder das Original zeigen?'))) return;
+  if (!await ask('discard', t('Die bearbeitete Fassung in den Papierkorb legen und wieder das Original zeigen?'))) return;
   try {
     const photo = await api(`photos/${Viewer.key}/develop`, { method: 'DELETE' });
     devClose();
@@ -1772,6 +1836,105 @@ const showSelection = () => { const keys = new Set(State.selected); return openS
 $('btn-show').addEventListener('click', () => openShow(() => api('sequence?' + query())));
 $('v-show').addEventListener('click', showFromViewer);
 $('sel-show').addEventListener('click', () => { if (State.selected.size) showSelection(); });
+
+// ----------------------------------------------------------------- sharing
+// Through the device's share sheet: WhatsApp, AirDrop, Nachrichten, Mail … The files are fetched first and
+// handed over on a second tap – Safari only opens the sheet straight from a tap, not after a wait.
+// Where a browser cannot share files, the button downloads them instead.
+const Share = { keys: [], files: [], run: 0 };
+const MAX_SHARE = 100;
+const canShareFiles = () => {
+  try { return !!(navigator.canShare && navigator.canShare({ files: [new File(['x'], 'x.jpg', { type: 'image/jpeg' })] })); }
+  catch { return false; }
+};
+
+function openShare(keys) {
+  if (!keys.length) return;
+  Share.keys = keys.slice(0, MAX_SHARE);
+  Share.cut = keys.length > MAX_SHARE;
+  $('share-size').value = store.get('shareSize', 'original');
+  $('share-go').textContent = canShareFiles() ? t('Teilen') : t('Herunterladen');
+  $('share-dlg').showModal();
+  prepareShare();
+}
+
+async function prepareShare() {
+  const run = ++Share.run;
+  const small = $('share-size').value === 'small';
+  store.set('shareSize', $('share-size').value);
+  Share.files = [];
+  $('share-go').disabled = true;
+  const bar = $('share-bar');
+  bar.hidden = false; bar.max = Share.keys.length; bar.value = 0;
+  message($('share-msg'), t('Wird vorbereitet …'));
+  const found = []; let done = 0; let failed = 0;
+  const one = async (key, at) => {
+    try {
+      const photo = await api('photos/' + key);
+      const preview = small && photo.kind === 'image';
+      const response = await fetch(`api/photos/${key}/${preview ? 'preview' : 'file'}`, { credentials: 'same-origin' });
+      if (!response.ok) throw new Error(String(response.status));
+      const blob = await response.blob();
+      const name = preview ? photo.name.replace(/\.[^.]+$/, '') + '.jpg' : photo.name;
+      found.push([at, name, blob]);
+    } catch { failed += 1; }
+    done += 1;
+    if (run === Share.run) bar.value = done;
+  };
+  for (let i = 0; i < Share.keys.length; i += 4) {
+    await Promise.all(Share.keys.slice(i, i + 4).map((key, j) => one(key, i + j)));
+    if (run !== Share.run) return;          // closed or started anew meanwhile
+  }
+  const taken = new Set();
+  Share.files = found.sort((a, b) => a[0] - b[0]).map(([, name, blob]) => {
+    let unique = name;                    // two IMG_0001.jpg from two folders must not overwrite each other
+    for (let n = 2; taken.has(unique.toLowerCase()); n += 1) unique = name.replace(/(\.[^.]+)?$/, `-${n}$1`);
+    taken.add(unique.toLowerCase());
+    return new File([blob], unique, { type: blob.type || 'application/octet-stream' });
+  });
+  bar.hidden = true;
+  const bytes = Share.files.reduce((sum, file) => sum + file.size, 0);
+  let text = Share.files.length === 1 ? t('1 Datei, {0}.', [fileSize(bytes)]) : t('{0} Dateien, {1}.', [number(Share.files.length), fileSize(bytes)]);
+  if (Share.cut) text += ' ' + t('Mehr als {0} auf einmal gehen nicht, es sind die ersten {0}.', [number(MAX_SHARE)]);
+  if (failed) text += ' ' + t('{0} ließen sich nicht laden.', [number(failed)]);
+  message($('share-msg'), text, failed > 0);
+  $('share-go').disabled = !Share.files.length;
+}
+
+function closeShare() {
+  Share.run += 1;
+  Share.files = [];
+  $('share-dlg').close();
+}
+
+$('share-size').addEventListener('change', prepareShare);
+$('share-cancel').addEventListener('click', closeShare);
+$('share-dlg').addEventListener('close', () => { Share.run += 1; Share.files = []; });
+$('share-go').addEventListener('click', async () => {
+  const files = Share.files;
+  if (!files.length) return;
+  if (canShareFiles()) {
+    if (!navigator.canShare({ files })) {
+      message($('share-msg'), t('Das Teilen-Menü nimmt diese Dateien so nicht an – vielleicht zu viele oder zu groß. Weniger auswählen oder „Kleiner“ nehmen.'), true);
+      return;
+    }
+    try {
+      await navigator.share({ files });
+      closeShare();
+    } catch (err) {
+      if (err.name !== 'AbortError') message($('share-msg'), t('Teilen ging nicht: {0}', [err.message]), true);
+    }
+    return;
+  }
+  for (const file of files) {
+    const url = URL.createObjectURL(file);
+    el('a', { href: url, download: file.name }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  closeShare();
+});
+$('sel-share').addEventListener('click', () => openShare([...State.selected]));
+$('v-share').addEventListener('click', () => { if (Viewer.key) openShare([Viewer.key]); });
 
 for (const id of ['show-prev', 'show-next', 'show-play', 'show-shuffle', 'show-info', 'show-close']) {
   $(id).addEventListener('click', (event) => {
@@ -2468,6 +2631,50 @@ $('btn-rescan').addEventListener('click', async () => {
 
 // ----------------------------------------------------------------- changing
 
+// ----------------------------------------------------------------- questions before a change
+// The everyday ones can be switched off with "Nicht mehr fragen" and on again under Einstellungen → Allgemein.
+// What cannot be taken back (empty the trash, delete for good, keys, users) is always asked.
+const ASKS = [
+  ['jpeg', t('PNG in JPEG umwandeln')],
+  ['move', t('Bilder verschieben')],
+  ['trash', t('Bilder in den Papierkorb legen')],
+  ['discard', t('Bearbeitete Fassung verwerfen')],
+  ['ai-sort', t('Nach dem Vorschlag der KI einsortieren')],
+];
+State.quiet = new Set();
+
+async function saveQuiet() {
+  try { State.quiet = new Set((await api('me/prefs', { method: 'PUT', body: JSON.stringify({ quiet: [...State.quiet] }) })).quiet); }
+  catch { /* kept for this visit */ }
+  renderAsks();
+}
+
+function ask(name, text) {
+  if (State.quiet.has(name)) return Promise.resolve(true);
+  const dlg = $('ask-dlg');
+  $('ask-text').textContent = text;
+  $('ask-quiet').checked = false;
+  dlg.returnValue = '';
+  return new Promise((resolve) => {
+    dlg.addEventListener('close', () => {
+      const yes = dlg.returnValue === 'yes';
+      if (yes && $('ask-quiet').checked) { State.quiet.add(name); saveQuiet(); }
+      resolve(yes);
+    }, { once: true });
+    dlg.showModal();
+    $('ask-yes').focus();
+  });
+}
+
+function renderAsks() {
+  $('set-asks').replaceChildren(...ASKS.map(([name, label]) => {
+    const box = el('input', { type: 'checkbox' });
+    box.checked = !State.quiet.has(name);
+    box.addEventListener('change', () => { if (box.checked) State.quiet.delete(name); else State.quiet.add(name); saveQuiet(); });
+    return el('label', { class: 'check' }, box, ' ', el('span', {}, label));
+  }));
+}
+
 const PROBLEMS = [
   ['invalid folder name', t('So kann ein Ordner nicht heißen.')],
   ['folder exists', t('Diesen Ordner gibt es schon.')],
@@ -2476,10 +2683,16 @@ const PROBLEMS = [
   ['invalid area name', t('So kann ein Bereich nicht heißen: Buchstaben, Ziffern, Leerzeichen, Punkt, Binde- und Unterstrich, höchstens 40 Zeichen.')],
   ['area exists', t('Diesen Bereich oder einen Ordner dieses Namens gibt es schon.')],
   ['area holds', t('Der Bereich ist nicht leer (auch der Papierkorb zählt).')],
+  ['a folder cannot go into itself', t('Ein Ordner kann nicht in sich selbst wandern.')],
+  ['cannot move the folder', t('Der Ordner ließ sich nicht verschieben – darf Augenblick! ins Foto-Verzeichnis schreiben?')],
   ['cannot create the folder', t('Der Ordner ließ sich nicht anlegen – darf Augenblick! ins Foto-Verzeichnis schreiben?')],
   ['read-only', t('Augenblick! darf in diese Fotos nicht schreiben.')],
   ['no write access', t('Dir fehlt das Schreibrecht für diesen Bereich.')],
-  ['only JPEG', t('Drehen geht bisher nur bei JPEG- und HEIC-Bildern.')],
+  ['only JPEG', t('Drehen geht bisher nur bei JPEG-, HEIC- und PNG-Bildern.')],
+  ['only PNG pictures can be made into JPEG', t('Nur PNG-Bilder lassen sich in JPEG umwandeln.')],
+  ['transparent parts', t('Das Bild hat durchsichtige Stellen – die kennt JPEG nicht, es bleibt ein PNG.')],
+  ['moving pictures', t('Bewegte Bilder (APNG) bleiben, wie sie sind.')],
+  ['no longer in the trash', t('Die PNG-Datei liegt nicht mehr im Papierkorb.')],
   ['no turn field', t('Dieses Bild lässt sich hier nicht drehen: Die Datei hat kein eigenes Drehfeld.')],
   ['this kind of film', t('Nur MOV- und MP4-Videos lassen sich ändern, ältere Formate wie MPG oder AVI nicht.')],
   ['ffmpeg is not installed', t('Zum Prüfen von Videos fehlt ffmpeg, das Video ist unverändert.')],
@@ -2613,6 +2826,28 @@ async function turnShown(degrees) {
   for (const id of ['v-left', 'v-right']) $(id).disabled = false;
 }
 $('v-left').addEventListener('click', () => turnShown(270));
+
+// A PNG – a screenshot, a picture from another app – as a JPEG: much smaller, everything it says comes along
+async function jpegShown() {
+  const old = Viewer.key;
+  if (!old || $('v-jpeg').disabled) return;
+  if (!await ask('jpeg', t('Das Bild als JPEG speichern? Die PNG-Datei kommt in den Papierkorb; unter Einstellungen → Änderungen lässt es sich zurücknehmen.'))) return;
+  $('v-jpeg').disabled = true;
+  message($('v-msg'), t('Wandelt um …'));
+  try {
+    const photo = await api(`photos/${old}/jpeg`, { method: 'POST' });
+    adopt(photo, old);
+    loadTrashCount();
+    if (Viewer.key === old) {
+      Viewer.key = photo.key;
+      if (Viewer.list) Viewer.list = Viewer.list.map((i) => (i.key === old ? { ...i, key: photo.key } : i));
+      showPhoto(photo);
+      message($('v-msg'), t('Als JPEG gespeichert: {0}', [photo.name]));
+    }
+  } catch (err) { message($('v-msg'), explain(err.message), true); }
+  $('v-jpeg').disabled = false;
+}
+$('v-jpeg').addEventListener('click', jpegShown);
 $('v-right').addEventListener('click', () => turnShown(90));
 
 $('v-edit').addEventListener('click', () => {
@@ -2839,7 +3074,7 @@ function markSelection() {
   }
   const n = State.selected.size;
   $('sel-count').textContent = n === 0 ? t('Nichts ausgewählt') : n === 1 ? t('1 Bild ausgewählt') : t('{0} Bilder ausgewählt', [number(n)]);
-  for (const id of ['sel-edit', 'sel-left', 'sel-right', 'sel-none', 'sel-delete', 'sel-propose', 'sel-take']) $(id).disabled = n === 0;
+  for (const id of ['sel-edit', 'sel-left', 'sel-right', 'sel-none', 'sel-delete', 'sel-propose', 'sel-take', 'sel-share']) $(id).disabled = n === 0;
 }
 
 let lastPicked = null;
@@ -2925,6 +3160,14 @@ async function turnSelected(degrees) {
   markSelection();
 }
 $('sel-left').addEventListener('click', () => turnSelected(270));
+
+async function jpegSelected() {
+  const n = State.selected.size;
+  if (!n || !await ask('jpeg', n === 1 ? t('Das Bild als JPEG speichern? Die PNG-Datei kommt in den Papierkorb.')
+    : t('{0} Bilder als JPEG speichern? Nur PNG-Bilder werden umgewandelt, die PNG-Dateien kommen in den Papierkorb.', [number(n)]))) return;
+  await runMany('jpeg', {}, (text, isBad) => message($('sel-msg'), text, isBad), t('umgewandelt'));
+  loadTrashCount();
+}
 $('sel-right').addEventListener('click', () => turnSelected(90));
 
 const batchFields = () => {
@@ -3105,7 +3348,7 @@ $('sel-take').addEventListener('change', async (event) => {
   event.target.value = '';
   const n = State.selected.size;
   if (!area || !n) return;
-  if (!window.confirm(n === 1 ? t('Das Bild mit dem Vorschlag der KI nach {0} einsortieren?', [area])
+  if (!await ask('ai-sort', n === 1 ? t('Das Bild mit dem Vorschlag der KI nach {0} einsortieren?', [area])
     : t('{0} Bilder mit den Vorschlägen der KI nach {1} einsortieren?', [number(n), area]))) return;
   store.set('inboxTarget', area);
   event.target.disabled = true;
@@ -3172,7 +3415,7 @@ $('sel-move').addEventListener('change', async (event) => {
   event.target.value = '';
   const n = State.selected.size;
   if (!area || !n) return;
-  if (!window.confirm(n === 1 ? t('Das Bild in den Bereich {0} verschieben?', [area]) : t('{0} Bilder in den Bereich {1} verschieben?', [number(n), area]))) return;
+  if (!await ask('move', n === 1 ? t('Das Bild in den Bereich {0} verschieben?', [area]) : t('{0} Bilder in den Bereich {1} verschieben?', [number(n), area]))) return;
   event.target.disabled = true;
   await runMany('move', { area }, (text, isBad) => message($('sel-msg'), text, isBad), t('nach {0} verschoben', [area]));
   event.target.disabled = false;
@@ -4484,7 +4727,7 @@ $('v-delete').addEventListener('click', deleteShown);
 
 $('sel-delete').addEventListener('click', async () => {
   const n = State.selected.size;
-  if (!window.confirm(n === 1 ? t('Das Bild in den Papierkorb legen?') : t('{0} Bilder in den Papierkorb legen?', [number(n)]))) return;
+  if (!await ask('trash', n === 1 ? t('Das Bild in den Papierkorb legen?') : t('{0} Bilder in den Papierkorb legen?', [number(n)]))) return;
   await runMany('delete', {}, (text, isBad) => message($('sel-msg'), text, isBad), t('in den Papierkorb gelegt'));
   loadTrashCount();
 });
@@ -4559,6 +4802,7 @@ const spot = (lat, lon) => (lat === null || lat === undefined ? t('kein Ort') : 
 function describe(entry) {
   const { before, after } = entry;
   if (entry.action === 'move') return t('verschoben: {0} → {1}', [before.path, after.path]);
+  if (entry.action === 'jpeg') return t('in JPEG umgewandelt: {0} → {1}', [before.path, after.path]);
   if (entry.action === 'rotate') {
     const how = { 90: t('nach rechts gedreht'), 180: t('auf den Kopf gedreht'), 270: t('nach links gedreht') }[after.turn];
     if (after.lossless) return t('{0}, verlustfrei', [how]);

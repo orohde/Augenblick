@@ -44,7 +44,7 @@ from .trash import Prefs, Trash, TrashError
 from .upload import Inbox, mount as mount_upload
 from .memories import Memories
 from .media import (MEDIA_TYPES, RAW_EXT, clean_recipe, develop, PREVIEW_EDGE, THUMB_EDGE, cache_path, clean_name, is_face, read_image, render, store,
-                    turn_box)
+                    turn_box, file_hash)
 from .security import (
     BodyLimit, DEFAULT_INTERNAL, LoginGuard, Networks, Notifier, SecurityStore, SessionStore, describe_agent,
                        normalise_networks, otpauth_uri, qr_data_uri)
@@ -102,6 +102,7 @@ class TreePrefs(BaseModel):
     tree_open: list[str] | None = Field(None, max_length=5000)
     language: str | None = Field(None, max_length=5)
     pins: list[str] | None = Field(None, max_length=100, description="albums pinned to the start page, in order")
+    quiet: list[str] | None = Field(None, max_length=50, description="questions this person no longer wants asked")
 
 
 class SetupIn(BaseModel):
@@ -246,6 +247,11 @@ class InboxAccept(ManyMove):
 
 class FolderIn(BaseModel):
     path: str = Field(max_length=1000, description="the new folder with its area in front: Bildschirmfotos/Arbeit")
+
+
+class FolderMove(BaseModel):
+    path: str = Field(max_length=1000, description="the folder with its area in front: Familie/Urlaub")
+    to: str = Field(max_length=1000, description="where it goes, with an area in front: Familie/Reisen/Urlaub")
 
 
 class ManyChange(Many):
@@ -665,6 +671,8 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
             app.state.user_prefs.set_tree_open(user.name, body.tree_open)
         if body.pins is not None:
             app.state.user_prefs.set_pins(user.name, body.pins)
+        if body.quiet is not None:
+            app.state.user_prefs.set_quiet(user.name, body.quiet)
         return app.state.user_prefs.get(user.name)
 
     def confirm(name: str, request: Request, check) -> bool:
@@ -1059,7 +1067,8 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         # date, place and words: pictures and the films whose boxes can be written
         data["can_change"] = data["can_write"] or (data["can_delete"] and data["kind"] == "video"
                                                     and data["ext"] in FILM_EXT)
-        data["can_turn"] = data["can_write"] and data["ext"] in ("jpg", "jpeg", "heic", "heif")
+        data["can_turn"] = data["can_write"] and data["ext"] in ("jpg", "jpeg", "heic", "heif", "png")
+        data["can_jpeg"] = data["can_write"] and data["ext"] == "png" and not data["error"]
         data["can_develop"] = data["can_write"] and data["ext"] != "gif" and not data["error"]
         data["inbox"] = data["area"] in app.state.inbox.areas()       # sent by the phone, not sorted yet
         data["proposal"] = proposals.get(data["path"]) if data["inbox"] else None
@@ -1190,6 +1199,32 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         finally:
             app.state.faces_wake.set()      # a turned picture is a new picture: its faces are looked for again
 
+    def to_jpeg(photo: dict, user: User, batch: str | None = None) -> dict:
+        """The PNG becomes a JPEG of the same name; the PNG goes to the trash, from where the
+        journal can bring it back."""
+        record = editor.to_jpeg(photo)
+        try:
+            kept = trash.put(photo, user.name)
+        except TrashError as exc:
+            (settings.photos / record["path"]).unlink(missing_ok=True)
+            index.forget(record["path"])
+            raise EditError(str(exc)) from exc
+        editor._tell(photo["hash"], record["hash"], 1, record["path"])      # the same picture under another hash
+        journal.add(user=user.name, batch=batch or secrets.token_hex(6), action="jpeg", path=record["path"],
+                    before={"path": photo["path"], "trash": kept}, after={"path": record["path"]}, tags={},
+                    sha_after=file_hash(settings.photos / record["path"]))
+        return record
+
+    @app.post("/api/photos/{key}/jpeg", tags=["changes"])
+    def jpeg_photo(key: str, user: User = Depends(current_user)):
+        """Make a PNG into a JPEG: same name, same date, place, words and faces, much smaller. The PNG
+        goes to the trash."""
+        return one(lambda p: to_jpeg(p, user), key, user)
+
+    @app.post("/api/jpeg", tags=["changes"])
+    def jpeg_many(body: Many, user: User = Depends(current_user)):
+        return many(lambda p: to_jpeg(p, user, body.batch), body.keys, user)
+
     @app.post("/api/edit", tags=["changes"])
     def change_many(body: ManyChange, user: User = Depends(current_user)):
         change = body.change.model_dump()
@@ -1231,6 +1266,23 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
                     raise EditError("file not found")
                 earlier = found["before"].get("recipe")
                 done = editor.develop(photo, earlier, user.name) if earlier else undevelop(photo, user)
+                journal.mark_undone(found["id"], user.name)
+                return public(done, user)
+            if found["action"] == "jpeg":         # the PNG back from the trash, the JPEG into it
+                photo = index.by_path(found["path"])
+                if found["undone"]:
+                    raise EditError("already taken back")
+                if not photo or file_hash(settings.photos / found["path"]) != found["sha_after"]:
+                    raise EditError("the file was changed again since then")
+                kept = trash.get(found["before"]["trash"])
+                if not kept:
+                    raise EditError("the PNG is no longer in the trash")
+                try:
+                    trash.put(photo, user.name, alone=True)
+                    done = trash.restore(kept)
+                except TrashError as exc:
+                    raise EditError(str(exc)) from exc
+                editor._tell(photo["hash"], done["hash"], 1, done["path"])
                 journal.mark_undone(found["id"], user.name)
                 return public(done, user)
             if found["action"] == "move":
@@ -1878,6 +1930,43 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         index.folders(fresh=True)
         return {"ok": True}
 
+    @app.post("/api/folders/move", tags=["sorting"])
+    def folder_move(body: FolderMove, user: User = Depends(current_user)):
+        """Rename a folder or move it, with everything in it, to another place – into another area too.
+        The photos keep their keys; the journal and the proposals follow them. Areas themselves are
+        renamed in the settings."""
+        src, dst = folder_of(body.path, user), folder_of(body.to, user)
+        old = str(src.relative_to(settings.photos)).replace(os.sep, "/")
+        new = str(dst.relative_to(settings.photos)).replace(os.sep, "/")
+        if not src.is_dir():
+            raise HTTPException(status_code=404, detail="unknown folder")
+        if old == new:
+            raise HTTPException(status_code=409, detail="nothing changed")
+        if (new + "/").startswith(old + "/"):
+            raise HTTPException(status_code=400, detail="a folder cannot go into itself")
+        same = dst.exists() and src.resolve() == dst.resolve()      # only the case differs
+        if dst.exists() and not same:
+            raise HTTPException(status_code=409, detail="folder exists")
+        with index._scan, sorter._lock:          # no scan sees half a move, no sorting runs across it
+            photos = index.paths_under(old)
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                os.rename(src, dst)
+                for made in [dst, *dst.parents]:
+                    if made == settings.photos:
+                        break
+                    if made.stat().st_uid == os.getuid():
+                        os.chmod(made, 0o775)
+            except OSError as exc:
+                raise HTTPException(status_code=400, detail=f"cannot move the folder: {exc.strerror}") from exc
+            for was in photos:
+                now = new + was[len(old):]
+                index.moved(was, now)
+                journal.repath(was, now)
+                proposals.repath(was, now)
+        index.folders(fresh=True)
+        return {"path": new, "moved": len(photos)}
+
     @app.post("/api/move", tags=["sorting"])
     def move_many(body: ManyMove, user: User = Depends(current_user)):
         """Hand the chosen photos over to another area – from an inbox into the library, say. They land
@@ -2493,7 +2582,8 @@ def create_app(settings: Settings | None = None, background: bool = True) -> Fas
         areas=areas, tree=tree, albums=albums, people_list=people_list, place_names=place_names, cameras=cameras,
         creators=creators, filters=filters, timeline=timeline, sequence=sequence, photo=photo,
         photo_thumb=photo_thumb, photo_faces=photo_faces, list_memories=list_memories, journal_list=journal_list,
-        trash_list=trash_list, change_many=change_many, turn_many=turn_many, name_face=name_face, move_many=move_many,
+        trash_list=trash_list, change_many=change_many, turn_many=turn_many, jpeg_many=jpeg_many, name_face=name_face,
+        move_many=move_many,
         inbox_accept=inbox_accept, delete_many=delete_many,
         trash_restore=trash_restore, journal_undo=journal_undo, writable_areas=lambda user: [] if settings.readonly
         else [a for a in allowed_areas(user) if user.can_write(a)]))

@@ -114,7 +114,7 @@
           </section>
           <section class="side" data-section="ordner">
             <button class="side__head" type="button" aria-expanded="true" aria-controls="side-ordner" data-i18n="Ordner (mehrere)"><span class="tree-caret is-open" aria-hidden="true">›</span>Ordner</button>
-            <div id="side-ordner" class="side__body"><div id="tree" class="tree" role="tree"></div></div>
+            <div id="side-ordner" class="side__body"><div class="tree-tools"><button id="tree-newfolder" class="tree-tool" type="button" title="Neuer Ordner" aria-label="Neuer Ordner" hidden>+ Neuer Ordner</button></div><div id="tree" class="tree" role="tree"></div></div>
           </section>
           <a id="trash-link" class="trash-link" href="#/papierkorb">Papierkorb <span id="trash-count"></span></a>
           <a class="tree-row side__link side__link--alone" href="#/duplikate"><span class="tree-caret is-leaf" aria-hidden="true">›</span><span class="tree-name">Duplikate</span></a>
@@ -184,6 +184,7 @@
         <button id="sel-propose" class="fd-button" type="button" title="Die KI sieht sich die ausgewählten Bilder an und schlägt Beschreibung und Schlagworte vor – nichts wird geschrieben" hidden>KI-Vorschläge holen</button>
         <select id="sel-take" class="fd-input toolbar__select" aria-label="Vorschläge übernehmen und einsortieren" hidden></select>
         <button id="sel-show" class="fd-button" type="button" title="Die ausgewählten Bilder bildschirmfüllend ansehen">▶ Ansehen</button>
+        <button id="sel-share" class="fd-button" type="button" title="An WhatsApp, AirDrop, Nachrichten, Mail … – über das Teilen-Menü des Geräts">Teilen …</button>
         <button id="sel-delete" class="fd-button" type="button">Löschen</button>
         <button id="sel-all" class="fd-button fd-button--transparent" type="button" title="Alle Bilder der Ansicht auswählen, über alle Monate">Alles auswählen</button>
         <button id="sel-none" class="fd-button fd-button--transparent" type="button">Auswahl aufheben</button>
@@ -239,6 +240,11 @@
                 </select>
               </div>
               <p class="set-hint">Gilt für diesen Browser. Der Knopf oben in der Leiste schaltet ebenfalls um.</p>
+            </div>
+            <div class="set-row">
+              <span class="fd-form-label">Rückfragen</span>
+              <div id="set-asks" class="set-field ask-list" role="group" aria-label="Rückfragen"></div>
+              <p class="set-hint">Vor diesen Änderungen fragt Augenblick! nach. Wo du „Nicht mehr fragen“ gewählt hast, fehlt der Haken – hier lässt er sich wieder setzen. Gilt für dieses Konto auf allen Geräten.</p>
             </div>
           </div>
         </section>
@@ -989,6 +995,7 @@
         <button id="v-show" class="fd-button" type="button" title="Ab diesem Bild bildschirmfüllend ansehen (Taste F)" hidden>▶ Ansehen</button>
         <button id="v-fav" class="fd-button fav-btn" type="button" aria-pressed="false" title="Als Favorit markieren (Taste L) – schreibt fünf Sterne ins Bild" hidden>&#9825;</button>
         <a id="v-download" class="fd-button" href="#">Original laden</a>
+        <button id="v-share" class="fd-button" type="button" title="An WhatsApp, AirDrop, Nachrichten, Mail … – über das Teilen-Menü des Geräts">Teilen …</button>
         <button id="v-live" class="fd-button" type="button" title="Den kurzen Film zu diesem Foto abspielen" hidden>&#9654; Live</button>
       </div>
       <h3 id="v-name" class="viewer__name"></h3>
@@ -997,6 +1004,7 @@
         <button id="v-right" class="fd-button" type="button" title="Nach rechts drehen" aria-label="Nach rechts drehen">&#8635;</button>
         <button id="v-edit" class="fd-button" type="button" title="Datum, Ort, Beschreibung, Schlagworte, Alben">Angaben</button>
         <button id="v-develop" class="fd-button" type="button" title="Zuschneiden, gerade rücken, Licht und Farben – das Original bleibt erhalten" hidden>Bild bearbeiten</button>
+        <button id="v-jpeg" class="fd-button" type="button" title="Als JPEG speichern – viel kleiner, mit allen Angaben; die PNG-Datei kommt in den Papierkorb" hidden>In JPEG umwandeln</button>
         <button id="v-delete" class="fd-button" type="button" title="In den Papierkorb legen (Taste Entf)">Löschen</button>
       </div>
       <div id="v-ai-box" class="viewer__tools" hidden>
@@ -1085,6 +1093,34 @@
     <h3 id="busy-title" class="fd-title fd-title--h5">Einen Moment …</h3>
     <progress id="busy-bar" class="job-bar" max="1" value="0"></progress>
     <p id="busy-text" aria-live="polite"></p>
+  </dialog>
+
+  <dialog id="ask-dlg" class="batch ask-dlg" aria-labelledby="ask-text">
+    <form method="dialog">
+      <p id="ask-text" class="ask-text"></p>
+      <label class="check"><input type="checkbox" id="ask-quiet"> <span>Nicht mehr fragen</span></label>
+      <div class="upd-actions">
+        <button class="fd-button fd-button--transparent" type="submit" value="no">Abbrechen</button>
+        <button id="ask-yes" class="fd-button fd-button--emphasized" type="submit" value="yes">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="share-dlg" class="batch ask-dlg" aria-labelledby="share-title">
+    <h3 id="share-title" class="fd-title fd-title--h5">Teilen</h3>
+    <p class="field-hint">Über das Teilen-Menü deines Geräts – WhatsApp, AirDrop, Nachrichten, Mail …</p>
+    <label class="fd-form-label" for="share-size">Was geht hinaus</label>
+    <select id="share-size" class="fd-input share-size">
+      <option value="original">Originale, mit allen Angaben</option>
+      <option value="small">Kleiner: JPEG bis 2048 Pixel, ohne Ort</option>
+    </select>
+    <p class="field-hint">„Kleiner“ lässt Ort und Kameradaten weg; Videos gehen immer als Original.</p>
+    <progress id="share-bar" class="job-bar" max="1" value="0"></progress>
+    <p id="share-msg" class="form-msg" role="status"></p>
+    <div class="upd-actions">
+      <button id="share-cancel" class="fd-button fd-button--transparent" type="button">Abbrechen</button>
+      <button id="share-go" class="fd-button fd-button--emphasized" type="button" disabled>Teilen</button>
+    </div>
   </dialog>
 
   <dialog id="upd-dlg" class="batch upd-dlg" aria-labelledby="upd-dlg-title">

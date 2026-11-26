@@ -744,8 +744,10 @@ class Editor:
         """
         if photo["ext"] in HEIF_EXT:
             return self._rotate_heif(photo, degrees, user, batch)
+        if photo["ext"] == "png":
+            return self._rotate_png(photo, degrees, user, batch)
         if photo["ext"] not in JPEG:
-            raise EditError("only JPEG and HEIC pictures can be turned so far")
+            raise EditError("only JPEG, HEIC and PNG pictures can be turned so far")
         with self._lock:
             src = self._source(photo["path"])
             present = self._read(src, TURN_TAGS)
@@ -885,6 +887,185 @@ class Editor:
                 after={"orientation": 1, "turn": degrees, "lossless": True, "op": n, "why": "", "heif": [was, now]},
                 tags={t: present.get(t) for t in tags}, sha_after=file_hash(src))
             return record
+
+    # ------------------------------------------------------------ PNG
+
+    def _png_turn(self, src: Path, n: int, tags: dict) -> Path:
+        """A PNG whose pixels went through orientation n, lying next to the photo, ready to take its
+        place. PNG stores without loss, so turning the pixels themselves loses nothing. Everything the
+        file says about itself comes along, `tags` on top; a small picture inside (IFD1) would show the
+        old orientation and goes. Proof: turned back, the pixels are the old ones, bit for bit."""
+        try:
+            with Image.open(src) as image:
+                if getattr(image, "n_frames", 1) > 1:
+                    raise EditError("moving pictures cannot be turned")
+                image.load()
+                info = dict(image.info)
+                mode, size, palette = image.mode, image.size, image.getpalette()
+                pixels = image.tobytes()
+                turned = image.transpose(PIL_OPS[n])
+        except EditError:
+            raise
+        except Exception as exc:
+            raise EditError(f"the picture cannot be read ({type(exc).__name__})") from exc
+        options = {key: info[key] for key in ("icc_profile", "dpi", "transparency") if key in info}
+        raw, final = self._beside(src), self._beside(src)
+        try:
+            turned.save(raw, "PNG", **options)
+            if not self.exiftool:
+                raise EditError("exiftool is not installed")
+            done = self._run([self.exiftool, "-n", "-m", *_utc(src), "-tagsfromfile", str(src), "-all:all", "-IFD1:all=",
+                              *self._arguments(tags), "-o", str(final), str(raw)])
+            if done.returncode != 0 or not final.is_file():
+                reason = (done.stderr.strip() or done.stdout.strip()).splitlines()
+                raise EditError(f"exiftool refused: {reason[-1][:200] if reason else 'no output'}")
+            with Image.open(final) as after:
+                after.load()
+                back = after.transpose(PIL_OPS[INVERSE[n]])
+                if (back.mode, back.size) != (mode, size) or back.tobytes() != pixels or after.getpalette() != palette:
+                    raise EditError("check failed: turning was not lossless")
+            if tags:
+                self._check_tags(final, tags)
+            return final
+        except Exception:
+            final.unlink(missing_ok=True)
+            raise
+        finally:
+            raw.unlink(missing_ok=True)
+
+    def _png_tags_only(self, src: Path, tags: dict) -> Path:
+        final = self._beside(src)
+        try:
+            self._write(src, final, tags)
+            self._same_picture(src, final)
+            self._check_tags(final, tags)
+            return final
+        except Exception:
+            final.unlink(missing_ok=True)
+            raise
+
+    def _rotate_png(self, photo: dict, degrees: int, user: str, batch: str | None = None) -> dict:
+        """Turn a PNG: its pixels are turned and the orientation tag, where there is one, says
+        "upright"; marked faces turn with it. Where the tag alone already brings it upright, only
+        the tag changes."""
+        with self._lock:
+            src = self._source(photo["path"])
+            present = self._read(src, TURN_TAGS)
+            now = present.get("IFD0:Orientation")
+            now = now if isinstance(now, int) and 1 <= now <= 8 else 1
+            total = COMPOSE[now, TURNS[degrees]]
+            regions = present.get(REGION_TAG)
+            if total == 1:          # stored upright already: only the tag was wrong
+                tags = {t: 1 for t in ("IFD0:Orientation", "XMP-tiff:Orientation") if t in present}
+                final = self._png_tags_only(src, tags)
+            else:
+                with Image.open(src) as image:
+                    width, height = image.size
+                if total >= 5:
+                    width, height = height, width
+                values = {"IFD0:Orientation": 1, "XMP-tiff:Orientation": 1,
+                          "ExifIFD:ExifImageWidth": width, "ExifIFD:ExifImageHeight": height}
+                tags = {t: v for t, v in values.items() if t in present}
+                if regions:             # the marked faces go round with the picture
+                    tags[REGION_TAG] = turn_regions(regions, total)
+                final = self._png_turn(src, total, tags)
+            try:
+                self._commit(final, src)
+            finally:
+                final.unlink(missing_ok=True)
+            record = self.index.refresh(photo["path"])
+            self._tell(photo["hash"], record["hash"], total, photo["path"])    # the hash covers the whole file
+            self.journal.add(
+                user=user, batch=batch or secrets.token_hex(6), action="rotate", path=photo["path"],
+                before={"orientation": now},
+                after={"orientation": 1, "turn": degrees, "lossless": True, "op": total, "why": "", "png": True},
+                tags={t: present.get(t) for t in tags}, sha_after=file_hash(src))
+            return record
+
+    def to_jpeg(self, photo: dict) -> dict:
+        """A JPEG of a PNG, beside it under the same name (with a number if that is taken): upright,
+        with everything the PNG says about itself – date, place, words, albums, faces. The PNG stays
+        where it is; the caller puts it in the trash. Pictures with transparent parts are refused:
+        JPEG knows no transparency."""
+        if photo["ext"] != "png":
+            raise EditError("only PNG pictures can be made into JPEG")
+        if not self.exiftool:
+            raise EditError("exiftool is not installed")
+        with self._lock:
+            src = self._source(photo["path"])
+            present = self._read(src, ("IFD0:Orientation", REGION_TAG))
+            try:
+                with Image.open(src) as image:
+                    if getattr(image, "n_frames", 1) > 1:
+                        raise EditError("moving pictures cannot be made into JPEG")
+                    image.load()
+                    mode, profile = image.mode, image.info.get("icc_profile")
+                    see_through = mode in ("RGBA", "LA", "PA") or "transparency" in image.info
+                    upright = ImageOps.exif_transpose(image)
+                    _, before = read_image(src.read_bytes())
+            except EditError:
+                raise
+            except Exception as exc:
+                raise EditError(f"the picture cannot be read ({type(exc).__name__})") from exc
+            if see_through and upright.convert("RGBA").getextrema()[3][0] < 255:
+                raise EditError("this picture has transparent parts")
+            if mode.startswith("I") or mode == "F":     # 16 bits a channel: JPEG holds 8
+                upright = upright.convert("I").point(lambda v: v * (1 / 256))
+            grey = mode in ("1", "L", "LA", "I", "I;16", "I;16B", "I;16L", "F")
+            made = upright.convert("L" if grey else "RGB")
+            if not (mode in ("L", "LA") if grey else mode in ("RGB", "RGBA", "P", "PA")):
+                profile = None          # a colour profile only fits the kind of picture it was made for
+            n = present.get("IFD0:Orientation")
+            n = n if isinstance(n, int) and 1 <= n <= 8 else 1
+            regions = present.get(REGION_TAG)
+            tags: dict = {"IFD0:Orientation": 1, "XMP-tiff:Orientation": None,
+                          "ExifIFD:ExifImageWidth": made.width, "ExifIFD:ExifImageHeight": made.height}
+            if regions and n != 1:
+                tags[REGION_TAG] = turn_regions(regions, n)
+            folder, _, name = photo["path"].rpartition("/")
+            stem = name.rpartition(".")[0]
+            number, target = 1, f"{folder}/{stem}.jpg"
+            while (self.root / target).exists():
+                number += 1
+                target = f"{folder}/{stem}-{number}.jpg"
+            raw, temp = (src.parent / f".augenblick-{secrets.token_hex(6)}.jpg" for _ in range(2))
+            try:
+                made.save(raw, "JPEG", quality=95, subsampling=0, optimize=True, **({"icc_profile": profile} if profile else {}))
+                done = self._run([self.exiftool, "-n", "-m", *_utc(src), "-tagsfromfile", str(src), "-all:all", "-IFD1:all=",
+                                  *self._arguments(tags), "-o", str(temp), str(raw)])
+                if done.returncode != 0 or not temp.is_file():
+                    reason = (done.stderr.strip() or done.stdout.strip()).splitlines()
+                    raise EditError(f"exiftool refused: {reason[-1][:200] if reason else 'no output'}")
+                try:
+                    check, after = read_image(temp.read_bytes())
+                    check = check.convert(made.mode)
+                except Exception as exc:
+                    raise EditError(f"check failed: the new file cannot be read ({type(exc).__name__})") from exc
+                if check.size != made.size or after["orientation"] != 1:
+                    raise EditError("check failed: not stored as asked")
+                box = (min(256, made.width), min(256, made.height))
+                if ImageStat.Stat(ImageChops.difference(check.resize(box), made.resize(box))).mean[0] > 3:
+                    raise EditError("check failed: the picture changed")
+                for field in ("taken", "description", "creator", "keywords", "albums", "rating", "people", "lat", "lon"):
+                    was, now = before.get(field) or None, after.get(field) or None     # missing = empty
+                    if isinstance(was, float) and isinstance(now, float):
+                        was, now = round(was, 6), round(now, 6)
+                    if was != now:
+                        raise EditError(f"check failed: not stored as asked ({field})")
+                stat = src.stat()
+                os.chmod(temp, stat.st_mode & 0o7777)
+                try:
+                    os.chown(temp, stat.st_uid, stat.st_gid)
+                except OSError:
+                    pass
+                os.utime(temp, (stat.st_atime, stat.st_mtime))     # where the file's own date is the only one
+                os.rename(temp, self.root / target)
+            except OSError as exc:
+                raise EditError("file is not writable") from exc
+            finally:
+                raw.unlink(missing_ok=True)
+                temp.unlink(missing_ok=True)
+            return self.index.refresh(target)
 
     # ------------------------------------------------------------ faces
 
@@ -1117,7 +1298,10 @@ class Editor:
             op = 1
             was = self.index.by_path(entry["path"])
             try:
-                if entry["action"] == "rotate" and entry["after"].get("heif"):
+                if entry["action"] == "rotate" and entry["after"].get("png"):
+                    op = INVERSE[entry["after"]["op"]]
+                    final = self._png_turn(src, op, entry["tags"]) if op != 1 else self._png_tags_only(src, entry["tags"])
+                elif entry["action"] == "rotate" and entry["after"].get("heif"):
                     op = INVERSE[entry["after"]["op"]]
                     turned = self._heif_turned(src, entry["after"]["heif"][0], op)
                     final = self._beside(src)

@@ -68,6 +68,11 @@ class Proposals:
             db.execute("INSERT OR REPLACE INTO proposals (path, data, ts, failed) VALUES (?, ?, ?, 1)",
                        (path, json.dumps({"error": error[:200]}), time.time()))
 
+    def repath(self, old: str, new: str) -> None:
+        """The picture moved (its folder did): what was proposed for it stays with it."""
+        with self._lock, self._connect() as db:
+            db.execute("UPDATE proposals SET path = ? WHERE path = ?", (new, old))
+
     def drop(self, path: str) -> None:
         with self._lock, self._connect() as db:
             db.execute("DELETE FROM proposals WHERE path = ?", (path,))

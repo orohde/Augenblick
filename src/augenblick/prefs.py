@@ -1,7 +1,7 @@
 """Per-person view settings that follow the account, not the browser.
 
 Kept in ``prefs.json`` in the data folder, one entry per user name: the language of the
-interface and the albums pinned to the start page. (Taken over from Ordnung!, which also keeps the expanded folders of its tree here.)
+interface, the albums pinned to the start page and the questions not to be asked again. (Taken over from Ordnung!, which also keeps the expanded folders of its tree here.)
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ class PrefsStore:
         with self._lock:
             p = self._load().get(user, {})
         return {"tree_open": list(p.get("tree_open", [])), "language": p.get("language", ""),
-                "pins": list(p.get("pins", []))}
+                "pins": list(p.get("pins", [])), "quiet": list(p.get("quiet", []))}
 
     def set_pins(self, user: str, albums: list[str]) -> list[str]:
         """The albums pinned to the start page, in their order."""
@@ -47,6 +47,15 @@ class PrefsStore:
         with self._lock:
             users = self._load()
             users.setdefault(user, {})["pins"] = clean
+            self._save(users)
+        return clean
+
+    def set_quiet(self, user: str, names: list[str]) -> list[str]:
+        """The questions before a change this person no longer wants to be asked – by their short names."""
+        clean = sorted({str(n) for n in names if n and len(str(n)) <= 40 and str(n).replace("-", "").isalnum()})[:50]
+        with self._lock:
+            users = self._load()
+            users.setdefault(user, {})["quiet"] = clean
             self._save(users)
         return clean
 

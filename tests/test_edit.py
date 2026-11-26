@@ -146,7 +146,85 @@ def test_png_gets_metadata_too(rw):
     assert response.json()["taken"] == "2001-02-03T04:05:06" and response.json()["keywords"] == ["png"]
     with Image.open(path) as image:
         assert image.tobytes() == before
-    assert rw.post(f"/api/photos/{response.json()['key']}/rotate", json={"degrees": 90}).status_code == 422
+    assert rw.post(f"/api/photos/{response.json()['key']}/jpeg").status_code == 200       # now it may be made a JPEG
+
+
+@pytest.mark.parametrize("degrees", [90, 180, 270])
+def test_png_turns_its_pixels_without_loss(rw, degrees):
+    path = rw.photos / "Familie/dreh/bild.png"
+    key = key_of(rw, "bild.png")
+    rw.patch(f"/api/photos/{key}", json={"description": "Wärmebild", "keywords": ["Fenster"]})
+    key = key_of(rw, "bild.png")
+    with Image.open(path) as image:
+        before = image.copy()
+    photo = rw.get(f"/api/photos/{key}").json()
+    assert photo["can_turn"] and photo["can_jpeg"]
+    body = rw.post(f"/api/photos/{key}/rotate", json={"degrees": degrees})
+    assert body.status_code == 200, body.text
+    body = body.json()
+    assert body["orientation"] == 1 and body["description"] == "Wärmebild" and body["keywords"] == ["Fenster"]
+    assert (body["width"], body["height"]) == ((48, 64) if degrees != 180 else (64, 48))
+    with Image.open(path) as image:
+        assert image.tobytes() == before.rotate(-degrees, expand=True).tobytes()     # exact: PNG keeps every pixel
+    entry = rw.get("/api/journal").json()[0]
+    assert entry["action"] == "rotate" and entry["after"]["lossless"] and entry["after"]["png"]
+    assert rw.post(f"/api/journal/{entry['id']}/undo").status_code == 200
+    with Image.open(path) as image:
+        assert image.tobytes() == before.tobytes() and image.size == before.size
+    assert rw.get(f"/api/photos/{key_of(rw, 'bild.png')}").json()["description"] == "Wärmebild"
+
+
+def test_png_lying_by_its_tag_turns_upright(rw):
+    path = picture(rw.photos / "Familie/dreh/liegt.png", fmt="PNG", orientation=6)
+    rw.app.state.index.scan()
+    before = shown(path)
+    body = rw.post(f"/api/photos/{key_of(rw, 'liegt.png')}/rotate", json={"degrees": 90}).json()
+    assert body["orientation"] == 1 and alike(shown(path), before.rotate(-90, expand=True))
+    assert tags(path, "IFD0:Orientation").get("IFD0:Orientation", 1) == 1
+
+
+def test_png_becomes_a_jpeg_and_back(rw):
+    path = rw.photos / "Familie/dreh/bild.png"
+    key = key_of(rw, "bild.png")
+    key = rw.patch(f"/api/photos/{key}", json={"description": "Wärmebild", "keywords": ["Fenster"], "rating": 3}).json()["key"]
+    with Image.open(path) as image:
+        before = image.convert("RGB")
+    response = rw.post(f"/api/photos/{key}/jpeg")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["name"] == "bild.jpg" and body["ext"] == "jpg" and not body["can_jpeg"]
+    assert (body["description"], body["keywords"], body["rating"], body["taken"]) == \
+        ("Wärmebild", ["Fenster"], 3, "2020-01-02T03:04:05")
+    assert not path.exists() and alike(Image.open(rw.photos / "Familie/dreh/bild.jpg"), before)
+    assert [e["name"] for e in rw.get("/api/trash").json()["entries"]] == ["bild.png"]
+    entry = rw.get("/api/journal").json()[0]
+    assert entry["action"] == "jpeg" and entry["before"]["path"] == "Familie/dreh/bild.png"
+    assert rw.post(f"/api/journal/{entry['id']}/undo").status_code == 200
+    assert path.exists() and not (rw.photos / "Familie/dreh/bild.jpg").exists()
+    assert rw.get(f"/api/photos/{key_of(rw, 'bild.png')}").json()["description"] == "Wärmebild"
+    assert rw.post(f"/api/journal/{entry['id']}/undo").status_code == 422
+
+
+def test_a_name_already_taken_gets_a_number_and_jpegs_stay(rw):
+    picture(rw.photos / "Familie/dreh/passt.png", fmt="PNG")
+    rw.app.state.index.scan()
+    body = rw.post(f"/api/photos/{key_of(rw, 'passt.png')}/jpeg").json()
+    assert body["name"] == "passt-2.jpg"
+    assert rw.post(f"/api/photos/{key_of(rw, 'krumm.jpg')}/jpeg").status_code == 422
+
+
+def test_a_see_through_png_stays_a_png(rw):
+    path = rw.photos / "Familie/dreh/logo.png"
+    Image.new("RGBA", (20, 10), (255, 0, 0, 0)).save(path)
+    rw.app.state.index.scan()
+    response = rw.post(f"/api/photos/{key_of(rw, 'logo.png')}/jpeg")
+    assert response.status_code == 422 and "transparent" in response.json()["detail"]
+    assert path.exists() and not (rw.photos / "Familie/dreh/logo.jpg").exists()
+    # an alpha channel that is opaque everywhere is no reason to refuse
+    Image.new("RGBA", (20, 10), (255, 0, 0, 255)).save(path)
+    rw.app.state.index.scan()
+    response = rw.post(f"/api/photos/{key_of(rw, 'logo.png')}/jpeg")
+    assert response.status_code == 200, response.text
 
 
 def test_undo_restores_the_exact_tags(rw):

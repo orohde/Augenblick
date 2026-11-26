@@ -18,9 +18,11 @@ Most photo servers take your pictures into a store of their own and keep what yo
 ## Features
 
 - **Timeline, folder tree, map and single view** – pictures in their own shape, filters by camera, place, area; search over name, folder, description, keywords, place and photographer.
+- **Folders in the tree** – via “+ New folder” or a right click (a long press on iPad and iPhone): create subfolders, rename, move – into another area too – and delete empty folders. The photos move along and keep their keys, the journal follows.
 - **Change date, place, description, keywords, photographer, rating** – for one picture or hundreds at once (the camera clock was off by two hours? shift them all). The place is picked on a map.
 - **Everything can be undone.** Every change is checked before it replaces the photo, the journal keeps the old values, deleting means the bin.
-- **Lossless rotation** of JPEG (jpegtran) and HEIC; marked faces turn with the picture.
+- **Lossless rotation** of JPEG (jpegtran), HEIC and PNG; marked faces turn with the picture.
+- **PNG to JPEG** (screenshots, say): same name, all details come along, the PNG goes to the trash and the journal can bring it back.
 - **Edit pictures:** crop, straighten, light and colours – as a new picture beside the original, which stays untouched behind it.
 - **Albums that live in the photo** (hierarchical keywords), **categories that fill themselves** (videos, Live Photos, panoramas, favourites, RAW, on this day) and **memories**: journeys and “this week in earlier years”, found from date and place.
 - **Start page and viewing:** first the pictures that came in last (however old they are), with memories and pinned albums. Every album, selection and memory can be viewed full screen – by hand or as a slide show.
@@ -174,7 +176,7 @@ AUGENBLICK_PHOTOS=/tmp/augenblick-demo/fotos AUGENBLICK_DATA=/tmp/augenblick-dem
   new JPEG beside the original, which is never changed: it is renamed to `…_original`, stands behind the new
   picture and goes wherever that goes. What was done is written in the new picture, so it can be done again
   from the original or taken back.
-- **Not yet:** changing raw files and older video formats (such as AVI, MPG), turning formats other than JPEG and HEIC, faces in videos.
+- **Not yet:** changing raw files and older video formats (such as AVI, MPG), turning formats other than JPEG, HEIC and PNG, faces in videos.
 
 ## Principles
 

@@ -217,6 +217,9 @@ def build_tools(ops: SimpleNamespace) -> dict[str, dict]:
     def rotate_photos(caller, keys: list[str], degrees: int):
         return results(ops.turn_many(ManyTurn(keys=keys, degrees=degrees, batch=secrets.token_hex(6)), user=caller.user))
 
+    def convert_to_jpeg(caller, keys: list[str]):
+        return results(ops.jpeg_many(Many(keys=keys, batch=secrets.token_hex(6)), user=caller.user))
+
     def name_face(caller, key: str, x: float, y: float, w: float, h: float, name: str = ""):
         data = ops.name_face(key, FaceName(x=x, y=y, w=w, h=h, name=name), user=caller.user)
         return {**_brief(data), "people": data.get("people", [])}
@@ -332,6 +335,12 @@ def build_tools(ops: SimpleNamespace) -> dict[str, dict]:
         "rotate_photos": tool(rotate_photos, "Rotate photos", "Turn photos clockwise, without loss where the picture allows it.",
                               _schema({"keys": _KEYS, "degrees": {"type": "integer", "enum": [90, 180, 270]}},
                                       ("keys", "degrees")), write=True),
+        "convert_to_jpeg": tool(
+            convert_to_jpeg, "Convert PNG to JPEG",
+            "Make PNG pictures (screenshots and the like) into JPEGs of the same name: date, place, description, "
+            "keywords, albums and faces come along, the file gets much smaller. The PNG goes to the trash; "
+            "undo_change brings it back. Pictures with transparent parts stay PNG. Each photo gets a new key.",
+            _schema({"keys": _KEYS}, ("keys",)), write=True, destructive=True),
         "name_face": tool(
             name_face, "Name a face",
             "Write a name on a face of a photo, with the box from get_photo_faces; a new box marks a face by hand. "

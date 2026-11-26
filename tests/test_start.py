@@ -101,3 +101,11 @@ def test_a_clock_running_ahead_does_not_stay_on_top(settings):
     make_jpeg(settings.photos / "Familie/Neu/bild.jpg", color=(19, 9, 9), taken="2001:01:01 00:00:00")
     app.state.index.scan()
     assert app.state.index.recent(["Familie"])[0]["taken"].startswith("2001")
+
+
+def test_questions_not_to_be_asked_again_follow_the_account(rw):
+    assert rw.get("/api/me/prefs").json()["quiet"] == []
+    body = rw.put("/api/me/prefs", json={"quiet": ["jpeg", "move", "jpeg", "<script>", ""]}).json()
+    assert body["quiet"] == ["jpeg", "move"] and body["pins"] == []
+    assert rw.get("/api/me/prefs").json()["quiet"] == ["jpeg", "move"]
+    assert rw.put("/api/me/prefs", json={"quiet": []}).json()["quiet"] == []

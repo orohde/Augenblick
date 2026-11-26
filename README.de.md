@@ -16,9 +16,11 @@ Die meisten Fotoserver nehmen deine Bilder in eine eigene Ablage und merken sich
 ## Funktionen
 
 - **Zeitleiste, Ordnerbaum, Karte und Einzelansicht** – Bilder in ihrer eigenen Form, Filter nach Kamera, Ort, Bereich; Suche über Name, Ordner, Beschreibung, Schlagworte, Ort und Fotograf.
+- **Ordner im Baum** – über „+ Neuer Ordner“ oder per Rechtsklick (auf iPad und iPhone lange drücken): Unterordner anlegen, umbenennen, verschieben, auch in einen anderen Bereich, und leere Ordner löschen. Die Fotos ziehen mit und behalten ihren Schlüssel, das Journal zieht nach.
 - **Datum, Ort, Beschreibung, Schlagworte, Fotograf, Bewertung ändern** – für ein Bild oder für Hunderte auf einmal (die Uhr der Kamera ging zwei Stunden falsch? alle verschieben). Den Ort wählst du auf der Karte.
 - **Alles lässt sich zurücknehmen.** Jede Änderung wird geprüft, bevor sie das Foto ersetzt, das Journal kennt die alten Werte, Löschen heißt Papierkorb.
-- **Verlustfreies Drehen** von JPEG (jpegtran) und HEIC; markierte Gesichter drehen mit.
+- **Verlustfreies Drehen** von JPEG (jpegtran), HEIC und PNG; markierte Gesichter drehen mit.
+- **PNG in JPEG umwandeln** (etwa Bildschirmfotos): gleicher Name, alle Angaben kommen mit, das PNG geht in den Papierkorb und lässt sich über das Journal zurückholen.
 - **Bilder bearbeiten:** zuschneiden, gerade rücken, Licht und Farben – als neues Bild neben dem Original, das dahinter unangetastet bleibt.
 - **Alben, die im Foto stehen** (hierarchische Schlagworte), **Kategorien, die sich selbst füllen** (Videos, Live Photos, Panoramen, Favoriten, RAW, An diesem Tag) und **Erinnerungen**: Reisen und „Diese Woche in früheren Jahren“, aus Datum und Ort gefunden.
 - **Startseite und Ansehen:** zuerst die Bilder, die zuletzt dazugekommen sind (egal wie alt), dazu Erinnerungen und angepinnte Alben. Jedes Album, jede Auswahl und jede Erinnerung lässt sich bildschirmfüllend ansehen – von Hand oder als Diashow.
@@ -98,7 +100,8 @@ AUGENBLICK_PHOTOS=/tmp/augenblick-demo/fotos AUGENBLICK_DATA=/tmp/augenblick-dem
   zurückgedreht und mit dem Original verglichen wird. Danach steht die Ausrichtung auf „aufrecht“, das eingebettete
   Vorschaubild und die Maßangaben stimmen, und markierte Gesichter drehen mit. Passt die Bildgröße nicht ins Raster
   des JPEGs (dann ginge es nur mit Verlust), bleibt das Bild unangetastet und nur die Ausrichtungs-Markierung wird
-  gesetzt; die Einzelansicht sagt das.
+  gesetzt; die Einzelansicht sagt das. PNGs speichern ohne Verlust, bei ihnen werden die Bildpunkte selbst
+  gedreht – geprüft, indem das Ergebnis zurückgedreht Punkt für Punkt dem Original gleicht.
 - **Journal.** Zu jeder Änderung stehen die genauen alten Werte im Journal (`journal.db`). Zurücknehmen stellt sie
   wieder her – solange das Bild seither nicht noch einmal geändert wurde.
 - **Ort auf der Karte.** Klick oder Ortssuche setzt die Koordinaten. Kartenbilder und Suche kommen direkt von
@@ -159,7 +162,7 @@ AUGENBLICK_PHOTOS=/tmp/augenblick-demo/fotos AUGENBLICK_DATA=/tmp/augenblick-dem
   lesend), wen es mit Namen kennt, sucht dieselben Bilder hier – über den Pfad, sonst über die unveränderte Datei,
   sonst über Name und Aufnahmezeit – und zeigt eine Vorschau. Erst nach Bestätigung werden die Namen als Regionen
   in die Bilder geschrieben. Adresse und Schlüssel werden nicht gespeichert.
-- **Noch nicht:** RAW-Dateien und ältere Videoformate (etwa AVI, MPG) ändern, andere Formate als JPEG und HEIC drehen, Gesichter in Videos.
+- **Noch nicht:** RAW-Dateien und ältere Videoformate (etwa AVI, MPG) ändern, andere Formate als JPEG, HEIC und PNG drehen, Gesichter in Videos.
 
 ## Grundsätze
 

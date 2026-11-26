@@ -481,6 +481,12 @@ class Index:
             names |= {p.name for p in self.root.iterdir() if p.is_dir() and not p.name.startswith((".", "@"))}
         return [{"name": name, "count": counts.get(name, 0)} for name in sorted(names, key=str.lower)]
 
+    def paths_under(self, folder: str) -> list[str]:
+        """Paths of every photo and video in ``folder`` and below it."""
+        rows = self._all("SELECT path FROM photos WHERE folder = ? OR folder LIKE ? ESCAPE '\\' ORDER BY path",
+                         [folder, folder.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%"])
+        return [row["path"] for row in rows]
+
     def folders(self, fresh: bool = False) -> list[str]:
         """Every folder below the areas as it lies on disk – also the ones without a photo yet.
         Looked up at most every half minute, and anew after a change."""
